@@ -35,6 +35,7 @@ import com.intellij.ui.mac.MacOSApplicationProvider;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.EnvironmentUtil;
 import com.intellij.util.PlatformUtils;
+import com.intellij.util.SearchQueryCollector;
 import com.intellij.util.lang.Java11Shim;
 import com.intellij.util.lang.ZipFilePool;
 import com.intellij.util.ui.StartupUiUtil;
@@ -791,6 +792,7 @@ public final class StartupUtil {
     Logger log = Logger.getInstance(Main.class);
     log.info("------------------------------------------------------ IDE STARTED ------------------------------------------------------");
     ShutDownTracker.getInstance().registerShutdownTask(() -> {
+      log.info(SearchQueryCollector.getInstance().getQueryResultString());
       log.info("------------------------------------------------------ IDE SHUTDOWN ------------------------------------------------------");
     });
     if (Boolean.parseBoolean(System.getProperty("intellij.log.stdout", "true"))) {
