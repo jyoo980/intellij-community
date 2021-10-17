@@ -32,8 +32,10 @@ public class SearchQueryCollector {
     if (!this.queryMap.isEmpty()) {
       StringBuilder queriesWithTime = new StringBuilder();
       this.queryMap.forEach((timeInMs, query) -> {
-        String fmtQuery = String.format("Date: %s, Query: %s\n", DateFormatUtil.formatDateTime(timeInMs), query);
-        queriesWithTime.append(fmtQuery);
+        if (!query.isBlank()) {
+          String fmtQuery = String.format("Date: %s, Query: %s\n", DateFormatUtil.formatDateTime(timeInMs), query);
+          queriesWithTime.append(fmtQuery);
+        }
       });
       return queriesWithTime.toString();
     }

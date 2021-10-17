@@ -1495,6 +1495,8 @@ public class FindPopupPanel extends JBPanel<FindPopupPanel> implements FindUI {
   }
 
   private void onStop(int hash, String message) {
+    String lastSearchQuery = this.getStringToFind();
+    SearchQueryCollector.getInstance().put(lastSearchQuery);
     if (hash != myLoadingHash) {
       return;
     }
