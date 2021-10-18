@@ -177,6 +177,7 @@ public final class SearchEverywhereManagerImpl implements SearchEverywhereManage
     res.put(PSIPresentationBgRendererWrapper.wrapIfNecessary(new RecentFilesSEContributor(initEvent)), SearchEverywhereTabDescriptor.PROJECT);
     res.put(new RunConfigurationsSEContributor(project, contextComponent, () -> mySearchEverywhereUI.getSearchField().getText()),
             SearchEverywhereTabDescriptor.IDE);
+    res.put(new StackOverflowContributor(), SearchEverywhereTabDescriptor.IDE);
 
     for (SearchEverywhereContributorFactory<?> factory : SearchEverywhereContributor.EP_NAME.getExtensionList()) {
       SearchEverywhereContributor<?> contributor = factory.createContributor(initEvent);

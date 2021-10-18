@@ -21,6 +21,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.Experiments;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.impl.FontInfo;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.progress.ProcessCanceledException;
@@ -59,6 +60,7 @@ import com.intellij.usages.impl.UsageViewManagerImpl;
 import com.intellij.util.Alarm;
 import com.intellij.util.Consumer;
 import com.intellij.util.Processor;
+import com.intellij.util.SearchQueryCollector;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.text.MatcherHolder;
@@ -76,6 +78,7 @@ import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import java.awt.*;
 import java.awt.event.*;
+import java.net.URI;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -114,6 +117,8 @@ public final class SearchEverywhereUI extends BigPopupUI implements DataProvider
   private final SearchFieldTypingListener mySearchTypingListener;
   private final HintHelper myHintHelper;
   private final SearchEverywhereMlService myMlService;
+
+  private final Logger logger = Logger.getInstance(SearchEverywhereUI.class);
 
   public SearchEverywhereUI(@Nullable Project project,
                             Map<SearchEverywhereContributor<?>, SearchEverywhereTabDescriptor> contributors) {
@@ -707,10 +712,25 @@ public final class SearchEverywhereUI extends BigPopupUI implements DataProvider
 
   private void triggerTabSwitched(AnActionEvent e) {
     String id = myHeader.getSelectedTab().getReportableID();
-
+    this.searchIfStackOverflow();
     SearchEverywhereUsageTriggerCollector.TAB_SWITCHED.log(myProject,
                                                            SearchEverywhereUsageTriggerCollector.CONTRIBUTOR_ID_FIELD.with(id),
                                                            EventFields.InputEventByAnAction.with(e));
+  }
+
+  private void searchIfStackOverflow() {
+    if (myHeader.getSelectedTab().getContributors().get(0).getSearchProviderId().equals("StackOverflowContributor")) {
+      Optional<String> queryOpt = SearchQueryCollector.getInstance().getLatestQuery()
+        .map(query -> query.replaceAll(" ", "%20"));
+      queryOpt.ifPresent(query -> {
+        String queryUri = String.format("https://www.google.com/search?q=%s", query);
+        try {
+          Desktop.getDesktop().browse(new URI(queryUri));
+        } catch (Exception e) {
+          logger.error(String.format("Failed to run query for: %s", query), e);
+        }
+      });
+    }
   }
 
   private void scrollList(boolean down) {
@@ -1104,6 +1124,9 @@ public final class SearchEverywhereUI extends BigPopupUI implements DataProvider
   @Nls(capitalization = Nls.Capitalization.Sentence)
   private String getNotFoundText() {
     SETab selectedTab = myHeader.getSelectedTab();
+    if (selectedTab.getContributors().get(0).getGroupName().equals(IdeBundle.message("searcheverywhere.stackoverflow.tab.name"))) {
+      return "No results for StackOverflow search";
+    }
     if (!selectedTab.isSingleContributor()) return IdeBundle.message("searcheverywhere.nothing.found.for.all.anywhere");
 
     String groupName = selectedTab.getContributors().get(0).getFullGroupName();
@@ -1151,6 +1174,7 @@ public final class SearchEverywhereUI extends BigPopupUI implements DataProvider
     @Override
     public void searchFinished(@NotNull Map<SearchEverywhereContributor<?>, Boolean> hasMoreContributors) {
       String pattern = getSearchPattern();
+      SearchQueryCollector.getInstance().add(pattern);
       pattern = pattern.replaceAll("^" + SearchTopHitProvider.getTopHitAccelerator() + "\\S+\\s*", "");
       if (myResultsList.isEmpty() || myListModel.isResultsExpired()) {
         if (myHeader.canSetEverywhere() && !myHeader.isEverywhere() && !pattern.isEmpty()) {
