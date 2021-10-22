@@ -95,6 +95,7 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
    * @param params analysis parameters
    */
   public void createToolWindow(@NotNull PsiElement element, @NotNull SliceAnalysisParams params) {
+    // the `rootNode` variable below should have all the slices (call getChildren() recursively to collect).
     SliceRootNode rootNode = new SliceRootNode(myProject, new DuplicateMap(),
                                                LanguageSlicing.getProvider(element).createRootUsage(element, params));
     createToolWindow(params.dataFlowToThis, rootNode, false, getElementDescription(null, element, null));
