@@ -26,6 +26,7 @@ import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.*;
 import java.util.regex.Pattern;
 
 @State(name = "SliceManager", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
@@ -38,6 +39,7 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
   private static final @NonNls String BACK_TOOLWINDOW_ID = "Analyze Dataflow to";
   private static final @NonNls String FORTH_TOOLWINDOW_ID = "Analyze Dataflow from";
 
+  private final SliceCollector mySliceCollector = new SliceCollector();
   static class StoredSettingsBean {
     boolean showDereferences = true; // to show in dataflow/from dialog
     AnalysisUIOptions analysisUIOptions = new AnalysisUIOptions();
@@ -99,6 +101,8 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
     SliceRootNode rootNode = new SliceRootNode(myProject, new DuplicateMap(),
                                                LanguageSlicing.getProvider(element).createRootUsage(element, params));
     createToolWindow(params.dataFlowToThis, rootNode, false, getElementDescription(null, element, null));
+    Collection<SliceNode> fullSlice = this.mySliceCollector.getSlicesStartingFrom(rootNode);
+    // TODO: do something with `fullSlice`
   }
 
   public void createToolWindow(boolean dataFlowToThis, @NotNull SliceRootNode rootNode, boolean splitByLeafExpressions, @NotNull @NlsContexts.TabTitle String displayName) {
