@@ -10,6 +10,7 @@ import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.components.StoragePathMacros;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.text.StringUtil;
@@ -40,6 +41,8 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
   private static final @NonNls String FORTH_TOOLWINDOW_ID = "Analyze Dataflow from";
 
   private final SliceCollector mySliceCollector = new SliceCollector();
+  private final Logger logger = Logger.getInstance(SliceManager.class);
+
   static class StoredSettingsBean {
     boolean showDereferences = true; // to show in dataflow/from dialog
     AnalysisUIOptions analysisUIOptions = new AnalysisUIOptions();
@@ -102,6 +105,8 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
                                                LanguageSlicing.getProvider(element).createRootUsage(element, params));
     createToolWindow(params.dataFlowToThis, rootNode, false, getElementDescription(null, element, null));
     Collection<SliceNode> fullSlice = this.mySliceCollector.getSlicesStartingFrom(rootNode);
+    this.mySliceCollector.sliceDescriptionMap(fullSlice)
+      .forEach((k, v) -> logger.info(String.format("Slice: %s .... Desc: %s", k, v)));
     // TODO: do something with `fullSlice`
   }
 

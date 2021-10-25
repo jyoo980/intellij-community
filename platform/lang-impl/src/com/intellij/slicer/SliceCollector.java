@@ -5,7 +5,7 @@ import java.util.*;
 
 public class SliceCollector {
 
-  private final int DEFAULT_MAX_CALL_DEPTH = 10 ;
+  private static final int DEFAULT_MAX_CALL_DEPTH = 10 ;
 
   public Collection<SliceNode> getSlicesStartingFrom(final SliceNode root) {
     return getSlicesStartingFrom(root, 0);
@@ -22,5 +22,14 @@ public class SliceCollector {
       }
     }
     return acc;
+  }
+
+  public Map<SliceNode, String> sliceDescriptionMap(final Collection<SliceNode> slices) {
+    final Map<SliceNode, String> sliceDescriptions = new HashMap<>();
+    slices.forEach(slice -> {
+      String desc = slice.getValue().getElement().getClass().getSimpleName();
+      sliceDescriptions.put(slice, desc);
+    });
+    return sliceDescriptions;
   }
 }
