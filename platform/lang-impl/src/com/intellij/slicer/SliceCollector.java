@@ -23,13 +23,4 @@ public class SliceCollector {
     }
     return acc;
   }
-
-  public Map<SliceNode, String> sliceDescriptionMap(final Collection<SliceNode> slices) {
-    final Map<SliceNode, String> sliceDescriptions = new HashMap<>();
-    slices.forEach(slice -> {
-      String desc = slice.getValue().getElement().getClass().getSimpleName();
-      sliceDescriptions.put(slice, desc);
-    });
-    return sliceDescriptions;
-  }
 }

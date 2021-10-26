@@ -41,6 +41,7 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
   private static final @NonNls String FORTH_TOOLWINDOW_ID = "Analyze Dataflow from";
 
   private final SliceCollector mySliceCollector = new SliceCollector();
+  private final SliceHydrationService mySliceHydrationService = new SliceHydrationService();
   private final Logger logger = Logger.getInstance(SliceManager.class);
 
   static class StoredSettingsBean {
@@ -105,8 +106,7 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
                                                LanguageSlicing.getProvider(element).createRootUsage(element, params));
     createToolWindow(params.dataFlowToThis, rootNode, false, getElementDescription(null, element, null));
     Collection<SliceNode> fullSlice = this.mySliceCollector.getSlicesStartingFrom(rootNode);
-    this.mySliceCollector.sliceDescriptionMap(fullSlice)
-      .forEach((k, v) -> logger.info(String.format("Slice: %s .... Desc: %s", k, v)));
+    this.mySliceHydrationService.hydrateSlices(fullSlice).forEach((k, v) -> logger.info(String.format("SLICE: %s", v)));
     // TODO: do something with `fullSlice`
   }
 
