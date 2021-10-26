@@ -20,6 +20,9 @@ import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.psi.ElementDescriptionUtil;
 import com.intellij.psi.PsiElement;
+import com.intellij.reachability.JavaSliceHydrationService;
+import com.intellij.reachability.SliceCollector;
+import com.intellij.reachability.SliceHydrationService;
 import com.intellij.refactoring.util.RefactoringDescriptionLocation;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentManager;
@@ -41,7 +44,7 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
   private static final @NonNls String FORTH_TOOLWINDOW_ID = "Analyze Dataflow from";
 
   private final SliceCollector mySliceCollector = new SliceCollector();
-  private final SliceHydrationService mySliceHydrationService = new SliceHydrationService();
+  private final SliceHydrationService mySliceHydrationService = new JavaSliceHydrationService();
   private final Logger logger = Logger.getInstance(SliceManager.class);
 
   static class StoredSettingsBean {
