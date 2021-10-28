@@ -2,7 +2,6 @@
 package com.intellij.slicer;
 
 import com.intellij.BundleBase;
-import com.intellij.analysis.AnalysisUIOptions;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.impl.ContentManagerWatcher;
 import com.intellij.lang.LangBundle;
@@ -24,6 +23,7 @@ import com.intellij.reachability.JavaSliceHydrationService;
 import com.intellij.reachability.SliceCollector;
 import com.intellij.reachability.SliceHydrationService;
 import com.intellij.refactoring.util.RefactoringDescriptionLocation;
+import com.intellij.tools.StoredSettingsBean;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentManager;
 import org.jetbrains.annotations.Contract;
@@ -34,7 +34,7 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 @State(name = "SliceManager", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
-public final class SliceManager implements PersistentStateComponent<SliceManager.StoredSettingsBean> {
+public final class SliceManager implements PersistentStateComponent<StoredSettingsBean> {
   private final Project myProject;
   private ContentManager myBackContentManager;
   private ContentManager myForthContentManager;
@@ -46,11 +46,6 @@ public final class SliceManager implements PersistentStateComponent<SliceManager
   private final SliceCollector mySliceCollector = new SliceCollector();
   private final SliceHydrationService mySliceHydrationService = new JavaSliceHydrationService();
   private final Logger logger = Logger.getInstance(SliceManager.class);
-
-  static class StoredSettingsBean {
-    boolean showDereferences = true; // to show in dataflow/from dialog
-    AnalysisUIOptions analysisUIOptions = new AnalysisUIOptions();
-  }
 
   public static SliceManager getInstance(@NotNull Project project) {
     return project.getService(SliceManager.class);

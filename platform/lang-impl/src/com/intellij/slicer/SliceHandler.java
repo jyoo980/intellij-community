@@ -12,6 +12,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.tools.StoredSettingsBean;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -61,7 +62,7 @@ public abstract class SliceHandler implements CodeInsightActionHandler {
   }
 
   public abstract SliceAnalysisParams askForParams(@NotNull PsiElement element,
-                                                   @NotNull SliceManager.StoredSettingsBean storedSettingsBean,
+                                                   StoredSettingsBean storedSettingsBean,
                                                    @NotNull @NlsContexts.DialogTitle String dialogTitle);
 
   @Contract("_ -> new")
