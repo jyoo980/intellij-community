@@ -19,9 +19,6 @@ import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.psi.ElementDescriptionUtil;
 import com.intellij.psi.PsiElement;
-import com.intellij.reachability.JavaSliceHydrationService;
-import com.intellij.reachability.SliceCollector;
-import com.intellij.reachability.SliceHydrationService;
 import com.intellij.refactoring.util.RefactoringDescriptionLocation;
 import com.intellij.tools.StoredSettingsBean;
 import com.intellij.ui.content.Content;
@@ -30,7 +27,6 @@ import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
 import java.util.regex.Pattern;
 
 @State(name = "SliceManager", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
@@ -42,10 +38,6 @@ public final class SliceManager implements PersistentStateComponent<StoredSettin
   private final StoredSettingsBean myStoredSettings = new StoredSettingsBean();
   private static final @NonNls String BACK_TOOLWINDOW_ID = "Analyze Dataflow to";
   private static final @NonNls String FORTH_TOOLWINDOW_ID = "Analyze Dataflow from";
-
-  private final SliceCollector mySliceCollector = new SliceCollector();
-  private final SliceHydrationService mySliceHydrationService = new JavaSliceHydrationService();
-  private final Logger logger = Logger.getInstance(SliceManager.class);
 
   public static SliceManager getInstance(@NotNull Project project) {
     return project.getService(SliceManager.class);
@@ -99,13 +91,9 @@ public final class SliceManager implements PersistentStateComponent<StoredSettin
    * @param params analysis parameters
    */
   public void createToolWindow(@NotNull PsiElement element, @NotNull SliceAnalysisParams params) {
-    // the `rootNode` variable below should have all the slices (call getChildren() recursively to collect).
     SliceRootNode rootNode = new SliceRootNode(myProject, new DuplicateMap(),
                                                LanguageSlicing.getProvider(element).createRootUsage(element, params));
     createToolWindow(params.dataFlowToThis, rootNode, false, getElementDescription(null, element, null));
-    Collection<SliceNode> fullSlice = this.mySliceCollector.getSlicesStartingFrom(rootNode);
-    this.mySliceHydrationService.hydrateSlices(fullSlice).forEach((k, v) -> logger.info(String.format("SLICE: %s", v)));
-    // TODO: do something with `fullSlice`
   }
 
   public void createToolWindow(boolean dataFlowToThis, @NotNull SliceRootNode rootNode, boolean splitByLeafExpressions, @NotNull @NlsContexts.TabTitle String displayName) {
