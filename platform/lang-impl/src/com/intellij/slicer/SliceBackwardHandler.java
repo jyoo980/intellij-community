@@ -10,6 +10,7 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
+import com.intellij.tools.StoredSettingsBean;
 import com.intellij.ui.DocumentAdapter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -25,7 +26,7 @@ class SliceBackwardHandler extends SliceHandler {
 
   @Override
   public SliceAnalysisParams askForParams(@NotNull PsiElement element,
-                                          @NotNull SliceManager.StoredSettingsBean storedSettingsBean,
+                                          StoredSettingsBean storedSettingsBean,
                                           @NotNull String dialogTitle) {
     AnalysisScope analysisScope = new AnalysisScope(element.getContainingFile());
     Module module = ModuleUtilCore.findModuleForPsiElement(element);
