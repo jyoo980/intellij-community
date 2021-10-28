@@ -16,12 +16,16 @@ import java.util.Collection;
 public class ReachabilityHandler implements CodeInsightActionHandler {
 
   private final SliceHandler handler;
-  private final SliceCollector mySliceCollector = new SliceCollector();
-  private final SliceHydrationService mySliceHydrationService = new JavaSliceHydrationService();
+  private final SliceCollector mySliceCollector;
+  private final SliceHydrationService mySliceHydrationService;
   private final Logger logger = Logger.getInstance(ReachabilityHandler.class);
 
-  public ReachabilityHandler(SliceHandler handler) {
+  public ReachabilityHandler(SliceHandler handler,
+                             SliceCollector sliceCollector,
+                             SliceHydrationService hydrationService) {
     this.handler = handler;
+    this.mySliceCollector = sliceCollector;
+    this.mySliceHydrationService = hydrationService;
   }
 
   @Override
@@ -40,7 +44,7 @@ public class ReachabilityHandler implements CodeInsightActionHandler {
         new DuplicateMap(),
         LanguageSlicing.getProvider(exprAtCaret).createRootUsage(exprAtCaret, params)
       );
-      Collection<SliceNode> fullSlice = this.mySliceCollector.getSlicesStartingFrom(rootNode);
+      final Collection<SliceNode> fullSlice = this.mySliceCollector.getSlicesStartingFrom(rootNode);
       this.mySliceHydrationService.hydrateSlices(fullSlice).forEach((k, v) -> logger.info(String.format("SLICE: %s", v)));
     } else {
       logger.warn("Failed to get relevant expression under cursor");
