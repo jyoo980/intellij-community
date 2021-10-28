@@ -11,6 +11,7 @@ import com.intellij.ide.plugins.IdeaPluginDescriptorImpl;
 import com.intellij.ide.plugins.PluginDescriptorLoader;
 import com.intellij.ide.plugins.PluginInstaller;
 import com.intellij.ide.plugins.PluginManagerCore;
+import com.intellij.ide.plugins.marketplace.MarketplacePluginDownloadService;
 import com.intellij.ide.startup.StartupActionScriptManager;
 import com.intellij.ide.startup.StartupActionScriptManager.ActionCommand;
 import com.intellij.idea.Main;
@@ -37,7 +38,6 @@ import com.intellij.util.Restarter;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.Decompressor;
-import com.intellij.util.lang.JavaVersion;
 import com.intellij.util.text.VersionComparatorUtil;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
@@ -86,6 +86,8 @@ public final class ConfigImportHelper {
   private static final String PLIST = "Info.plist";
   private static final String PLUGINS = "plugins";
   private static final String SYSTEM = "system";
+
+  private static final Set<String> SESSION_FILES = Set.of(PORT_FILE, PORT_LOCK_FILE, TOKEN_FILE, USER_WEB_TOKEN);
 
   public static final Pattern SELECTOR_PATTERN = Pattern.compile("\\.?([^\\d]+)(\\d+(?:\\.\\d+)?)");
   private static final String SHOW_IMPORT_CONFIG_DIALOG_PROPERTY = "idea.initially.ask.config";
@@ -716,7 +718,7 @@ public final class ConfigImportHelper {
     boolean headless;
     boolean importPlugins = true;
     BuildNumber compatibleBuildNumber = null;
-    ThrowableNotNullBiFunction<? super String, ? super ProgressIndicator, ? extends File, ? extends IOException> downloadFunction = null;
+    MarketplacePluginDownloadService downloadService = null;
     Path bundledPluginPath = null;
     Map<PluginId, Set<String>> brokenPluginVersions = null;
 
@@ -915,12 +917,12 @@ public final class ConfigImportHelper {
       }
 
       try {
-        PluginDownloader downloader = PluginDownloader.createDownloader(plugin);
-        if (options.downloadFunction != null) {
-          downloader.setDownloadFunction(options.downloadFunction);
-        }
-        if (downloader.prepareToInstallAndLoadDescriptor(indicator, false) != null) {
-          PluginInstaller.unpackPlugin(downloader.getFile().toPath(), newPluginsDir);
+        PluginDownloader downloader = PluginDownloader.createDownloader(plugin)
+          .withErrorsConsumer(__ -> {})
+          .withDownloadService(options.downloadService);
+
+        if (downloader.prepareToInstall(indicator)) {
+          PluginInstaller.unpackPlugin(downloader.getFilePath(), newPluginsDir);
           log.info("Downloaded and unpacked compatible version of plugin " + plugin.getPluginId());
           iterator.remove();
         }
@@ -986,7 +988,8 @@ public final class ConfigImportHelper {
     if (Files.exists(vmOptionsFile)) {
       try {
         List<String> lines = Files.readAllLines(vmOptionsFile, VMOptions.getFileCharset());
-        Collection<String> platformLines = new LinkedHashSet<>(readPlatformOptions(newConfigDir, log));
+        Path platformVmOptionsFile = newConfigDir.getFileSystem().getPath(VMOptions.getPlatformOptionsFile().toString());
+        Collection<String> platformLines = new LinkedHashSet<>(readPlatformOptions(platformVmOptionsFile, log));
         boolean updated = false;
 
         for (ListIterator<String> i = lines.listIterator(); i.hasNext(); ) {
@@ -994,10 +997,13 @@ public final class ConfigImportHelper {
           if (line.equals("-XX:MaxJavaStackTraceDepth=-1")) {
             i.set("-XX:MaxJavaStackTraceDepth=10000"); updated = true;
           }
-          else if ("-XX:+UseConcMarkSweepGC".equals(line) && JavaVersion.current().isAtLeast(17) ||
+          else if ("-XX:+UseConcMarkSweepGC".equals(line) ||
                    "-Xverify:none".equals(line) || "-noverify".equals(line) ||
+                   "-XX:+UseCompressedOops".equals(line) ||
                    line.startsWith("-agentlib:yjpagent") ||
                    line.startsWith("-agentpath:") && line.contains("yjpagent") ||
+                   "-Dsun.io.useCanonPrefixCache=false".equals(line) ||
+                   "-Dfile.encoding=UTF-8".equals(line) && SystemInfo.isMac ||
                    isDuplicateOrLowerValue(line, platformLines)) {
             i.remove(); updated = true;
           }
@@ -1013,12 +1019,12 @@ public final class ConfigImportHelper {
     }
   }
 
-  private static List<String> readPlatformOptions(Path newConfigDir, Logger log) {
-    Path platformVmOptionsFile = newConfigDir.getFileSystem().getPath(VMOptions.getPlatformOptionsFile().toString());
+  private static List<String> readPlatformOptions(Path platformVmOptionsFile, Logger log) {
     try {
       return Files.readAllLines(platformVmOptionsFile, VMOptions.getFileCharset());
     }
     catch (IOException e) {
+      // should not prevent a user's VM options file from being processed
       log.warn("Cannot read platform VM options file " + platformVmOptionsFile, e);
       return List.of();
     }
@@ -1064,8 +1070,9 @@ public final class ConfigImportHelper {
   }
 
   private static boolean shouldSkipFileDuringImport(String fileName) {
-    List<String> filesToSkip = Arrays.asList(PORT_FILE, PORT_LOCK_FILE, TOKEN_FILE, USER_WEB_TOKEN);
-    return filesToSkip.contains(fileName) || fileName.startsWith(CHROME_USER_DATA);
+    return SESSION_FILES.contains(fileName) ||
+           fileName.startsWith(CHROME_USER_DATA) ||
+           fileName.endsWith(".jdk") && fileName.startsWith(String.valueOf(ApplicationNamesInfo.getInstance().getScriptName()));
   }
 
   private static String defaultConfigPath(String selector) {

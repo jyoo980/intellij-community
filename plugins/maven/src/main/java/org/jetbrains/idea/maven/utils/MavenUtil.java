@@ -847,7 +847,7 @@ public class MavenUtil {
   }
 
   @Nullable
-  public static File getRepositoryParentFile(@NotNull Project project, @NotNull MavenId id) {
+  public static java.nio.file.Path getRepositoryParentFile(@NotNull Project project, @NotNull MavenId id) {
     if (id.getGroupId() == null || id.getArtifactId() == null || id.getVersion() == null) {
       return null;
     }
@@ -855,13 +855,12 @@ public class MavenUtil {
     return getParentFile(id, projectsManager.getLocalRepository());
   }
 
-  @NotNull
-  private static File getParentFile(@NotNull MavenId id, File localRepository) {
+  private static java.nio.file.Path getParentFile(@NotNull MavenId id, File localRepository) {
     assert id.getGroupId() != null;
     String[] pathParts = id.getGroupId().split("\\.");
     java.nio.file.Path path = Paths.get(localRepository.getAbsolutePath(), pathParts);
     path = Paths.get(path.toString(), id.getArtifactId(), id.getVersion());
-    return path.toFile();
+    return path;
   }
 
   @Nullable
@@ -1035,7 +1034,7 @@ public class MavenUtil {
 
       for (Pair<Pattern, String> path : SUPER_POM_PATHS) {
         if (path.first.matcher(library.getName()).matches()) {
-          VirtualFile libraryVirtualFile = LocalFileSystem.getInstance().findFileByIoFile(library);
+          VirtualFile libraryVirtualFile = LocalFileSystem.getInstance().findFileByNioFile(library.toPath());
           if (libraryVirtualFile == null) continue;
 
           VirtualFile root = JarFileSystem.getInstance().getJarRootForLocalFile(libraryVirtualFile);
@@ -1101,7 +1100,7 @@ public class MavenUtil {
     }
 
     MavenSyncConsole syncConsole = MavenProjectsManager.getInstance(project).getSyncConsole();
-    List<File> files = ContainerUtil.map(unresolvedArtifacts, a -> a.getFile().getParentFile());
+    List<java.nio.file.Path> files = ContainerUtil.map(unresolvedArtifacts, a -> a.getFile().toPath().getParent());
     CleanBrokenArtifactsAndReimportQuickFix fix = new CleanBrokenArtifactsAndReimportQuickFix(files);
     for (MavenArtifact artifact : unresolvedArtifacts) {
       syncConsole.getListener(MavenServerProgressIndicator.ResolveType.DEPENDENCY)

@@ -682,16 +682,50 @@ public class JBUI {
     }
 
     public static final class StatusBar {
-      @NotNull
+      public static final Color BACKGROUND = JBColor.namedColor("StatusBar.background", JBColor.PanelBackground);
+
+      /**
+       * @deprecated Use {@link Widget#HOVER_BACKGROUND} instead.
+       */
+      @Deprecated
       public static Color hoverBackground() {
-        return JBColor.namedColor("StatusBar.hoverBackground", ActionButton.hoverBackground());
+        return Widget.HOVER_BACKGROUND;
+      }
+
+      public interface Widget {
+        Color FOREGROUND = JBColor.namedColor("StatusBar.Widget.foreground", UIUtil.getLabelForeground());
+        Color HOVER_FOREGROUND = JBColor.namedColor("StatusBar.Widget.hoverForeground", UIUtil.getLabelForeground());
+        Color HOVER_BACKGROUND = JBColor.namedColor("StatusBar.Widget.hoverBackground", ActionButton.hoverBackground());
+        Color PRESSED_FOREGROUND = JBColor.namedColor("StatusBar.Widget.pressedForeground", UIUtil.getLabelForeground());
+        Color PRESSED_BACKGROUND = JBColor.namedColor("StatusBar.Widget.pressedBackground", ActionButton.pressedBackground());
+
+        static Border iconBorder() {
+          return new JBEmptyBorder(insets("StatusBar.widgetInsets", insets(0, 4)));
+        }
+
+        static Border border() {
+          return new JBEmptyBorder(insets("StatusBar.widgetInsets", insets(0, 6)));
+        }
+      }
+
+      public interface Breadcrumbs {
+        Color FOREGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.foreground", StatusBar.Widget.FOREGROUND);
+        Color HOVER_FOREGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.hoverForeground", UIUtil.getLabelForeground());
+        Color HOVER_BACKGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.hoverBackground", ActionButton.hoverBackground());
+        Color SELECTION_FOREGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.selectionForeground", List.Selection.foreground(true));
+        Color SELECTION_BACKGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.selectionBackground", List.Selection.background(true));
+        Color SELECTION_INACTIVE_FOREGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.selectionInactiveForeground", List.Selection.foreground(false));
+        Color SELECTION_INACTIVE_BACKGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.selectionInactiveBackground", List.Selection.background(false));
+
+        Color FLOATING_BACKGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.floatingBackground", List.BACKGROUND);
+        Color FLOATING_FOREGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.floatingForeground", UIUtil.getLabelForeground());
       }
     }
 
     public static final class ToolWindow {
       @NotNull
       public static Color background() {
-        return JBColor.namedColor("ToolWindow.background", JBColor.background());
+        return JBColor.namedColor("ToolWindow.background");
       }
 
       @NotNull
@@ -737,8 +771,8 @@ public class JBUI {
       }
 
       @NotNull
-      public static int headerTabPadding() {
-        return getInt("ToolWindow.HeaderTab.padding", JBUIScale.scale(6));
+      public static Insets headerTabInsets() {
+        return insets("ToolWindow.HeaderTab.insets", insets(0, 12, 0, 12));
       }
 
       /**
@@ -784,8 +818,9 @@ public class JBUI {
         return JBColor.namedColor("ToolWindow.Header.background", JBColor.namedColor("ToolWindow.header.active.background", 0xE2E6EC));
       }
 
-      public static int headerPadding() {
-        return getInt("ToolWindow.Header.padding", JBUIScale.scale(6));
+      @NotNull
+      public static Insets headerInsets() {
+        return insets("ToolWindow.Header.insets", insets(4, 8, 4, 8));
       }
 
       /**

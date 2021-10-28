@@ -66,6 +66,7 @@ import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
 import com.siyeh.ig.psiutils.ControlFlowUtils;
+import com.siyeh.ig.psiutils.ExpressionUtils;
 import com.siyeh.ig.psiutils.VariableAccessUtils;
 import com.siyeh.ig.psiutils.VariableNameGenerator;
 import org.jetbrains.annotations.*;
@@ -221,7 +222,12 @@ public final class HighlightUtil {
         || !TypeConversionUtil.areTypesConvertible(operandType, checkType)) {
       String message = JavaErrorBundle.message("inconvertible.type.cast", JavaHighlightUtil.formatType(operandType), JavaHighlightUtil
         .formatType(checkType));
-      return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(expression).descriptionAndTooltip(message).create();
+      HighlightInfo info =
+        HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(expression).descriptionAndTooltip(message).create();
+      if (TypeConversionUtil.isPrimitiveAndNotNull(checkType)) {
+        QuickFixAction.registerQuickFixAction(info, getFixFactory().createReplacePrimitiveWithBoxedTypeAction(operandType, typeElement));
+      }
+      return info;
     }
     return null;
   }
@@ -992,7 +998,6 @@ public final class HighlightUtil {
       PsiClass aClass = (PsiClass)modifierOwner;
       boolean privateOrProtected = PsiModifier.PRIVATE.equals(modifier) || PsiModifier.PROTECTED.equals(modifier);
       if (aClass.isInterface()) {
-        //noinspection DuplicateExpressions
         if (PsiModifier.STATIC.equals(modifier) || privateOrProtected || PsiModifier.PACKAGE_LOCAL.equals(modifier)) {
           isAllowed = modifierOwnerParent instanceof PsiClass;
         }
@@ -1013,7 +1018,6 @@ public final class HighlightUtil {
                        !modifierOwnerParent.isPhysical());
         }
         else {
-          //noinspection DuplicateExpressions
           if (PsiModifier.STATIC.equals(modifier) || privateOrProtected || PsiModifier.PACKAGE_LOCAL.equals(modifier)) {
             isAllowed = modifierOwnerParent instanceof PsiClass &&
                         (PsiModifier.STATIC.equals(modifier) || ((PsiClass)modifierOwnerParent).getQualifiedName() != null) ||
@@ -1336,9 +1340,9 @@ public final class HighlightUtil {
 
   private static final Pattern FP_LITERAL_PARTS =
     Pattern.compile("(?:" +
-                    "(?:0x([_\\p{XDigit}]*)\\.?([_\\p{XDigit}]*)p[+-]?([_\\d]*))" +
+                    "0x([_\\p{XDigit}]*)\\.?([_\\p{XDigit}]*)p[+-]?([_\\d]*)" +
                     "|" +
-                    "(?:([_\\d]*)\\.?([_\\d]*)e?[+-]?([_\\d]*))" +
+                    "([_\\d]*)\\.?([_\\d]*)e?[+-]?([_\\d]*)" +
                     ")[fd]?");
 
   private static HighlightInfo checkUnderscores(@NotNull PsiElement expression, @NotNull String text, boolean isInt) {
@@ -1666,7 +1670,9 @@ public final class HighlightUtil {
   }
 
   public static HighlightInfo checkInstanceOfPatternSupertype(PsiInstanceOfExpression expression) {
-    PsiTypeTestPattern pattern = tryCast(expression.getPattern(), PsiTypeTestPattern.class);
+    if (expression == null) return null;
+
+    PsiTypeTestPattern pattern = getTypeTestPattern(expression.getPattern());
     if (pattern == null) return null;
     PsiPatternVariable variable = pattern.getPatternVariable();
     if (variable == null) return null;
@@ -1689,6 +1695,25 @@ public final class HighlightUtil {
     return null;
   }
 
+  @Contract(value = "null -> null", pure = true)
+  private static @Nullable PsiTypeTestPattern getTypeTestPattern(@Nullable PsiPattern expressionPattern) {
+    final PsiPattern innerMostPattern = JavaPsiPatternUtil.skipParenthesizedPatternDown(expressionPattern);
+    if (innerMostPattern == null) return null;
+
+    final PsiTypeTestPattern pattern = tryCast(innerMostPattern, PsiTypeTestPattern.class);
+    if (pattern != null) return pattern;
+
+    final PsiGuardedPattern guardedPattern = tryCast(innerMostPattern, PsiGuardedPattern.class);
+    if (guardedPattern == null) return null;
+
+    final Object condition = ExpressionUtils.computeConstantExpression(guardedPattern.getGuardingExpression());
+    if (!Boolean.TRUE.equals(condition)) return null;
+
+    final PsiPattern patternInGuard = JavaPsiPatternUtil.skipParenthesizedPatternDown(guardedPattern.getPrimaryPattern());
+    if (patternInGuard == null || patternInGuard instanceof PsiTypeTestPattern) return (PsiTypeTestPattern)patternInGuard;
+
+    return getTypeTestPattern(patternInGuard);
+  }
 
   static HighlightInfo checkPolyadicOperatorApplicable(@NotNull PsiPolyadicExpression expression) {
     PsiExpression[] operands = expression.getOperands();
@@ -3248,7 +3273,7 @@ public final class HighlightUtil {
 
   static HighlightInfo checkAnnotationMethodParameters(@NotNull PsiParameterList list) {
     final PsiElement parent = list.getParent();
-    if (PsiUtil.isAnnotationMethod(parent) && 
+    if (PsiUtil.isAnnotationMethod(parent) &&
         (!list.isEmpty() || PsiTreeUtil.getChildOfType(list, PsiReceiverParameter.class) != null)) {
       final String message = JavaErrorBundle.message("annotation.interface.members.may.not.have.parameters");
       final HighlightInfo highlightInfo =

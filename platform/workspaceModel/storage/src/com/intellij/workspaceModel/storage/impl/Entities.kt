@@ -66,9 +66,9 @@ import kotlin.reflect.full.memberProperties
  *
  *       override fun persistentId(): NameId = NameId(name)
  *
-*        override fun createEntity(snapshot: WorkspaceEntityStorage): MyModuleEntity = MyModuleEntity(name).also {
-*            addMetaData(it, snapshot)
-*        }
+ *        override fun createEntity(snapshot: WorkspaceEntityStorage): MyModuleEntity = MyModuleEntity(name).also {
+ *            addMetaData(it, snapshot)
+ *        }
  *   }
  *   ```
  *
@@ -131,7 +131,7 @@ abstract class WorkspaceEntityBase : ReferableWorkspaceEntity, Any() {
     return EntityReferenceImpl(this.id)
   }
 
-  override fun toString(): String = "$id"
+  override fun toString(): String = id.asString()
 
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
@@ -140,6 +140,7 @@ abstract class WorkspaceEntityBase : ReferableWorkspaceEntity, Any() {
     other as WorkspaceEntityBase
 
     if (id != other.id) return false
+    if (this.snapshot.entityDataById(id) !== other.snapshot.entityDataById(other.id)) return false
 
     return true
   }

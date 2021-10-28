@@ -343,6 +343,10 @@ final class EditorGutterComponentImpl extends EditorGutterComponentEx implements
   @Override
   public void paintComponent(Graphics g_) {
     Rectangle clip = g_.getClipBounds();
+    if (clip == null || clip.isEmpty()) {
+      return;
+    }
+
     Graphics2D g = (Graphics2D)getComponentGraphics(g_);
 
     if (myEditor.isDisposed()) {
@@ -1862,7 +1866,9 @@ final class EditorGutterComponentImpl extends EditorGutterComponentEx implements
     ProgressManager.getInstance().runProcessWithProgressAsynchronously(new Task.Backgroundable(myEditor.getProject(), IdeBundle.message("progress.title.constructing.tooltip")) {
       @Override
       public void run(@NotNull ProgressIndicator indicator) {
-        tooltip.set(ReadAction.compute(() -> renderer.getTooltipText()));
+        tooltip.set(ReadAction.nonBlocking(() -> renderer.getTooltipText())
+            .wrapProgress(indicator)
+              .executeSynchronously());
       }
 
       @Override

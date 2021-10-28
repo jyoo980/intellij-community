@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.wm.impl
 
 import com.intellij.icons.AllIcons
@@ -9,14 +9,15 @@ import com.intellij.ide.ui.UISettings.Companion.setupAntialiasing
 import com.intellij.ide.ui.UISettingsListener
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
-import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.wm.ToolWindowAnchor
 import com.intellij.openapi.wm.ToolWindowContentUiType
 import com.intellij.openapi.wm.ToolWindowType
 import com.intellij.openapi.wm.impl.content.ToolWindowContentUi
 import com.intellij.ui.DoubleClickListener
+import com.intellij.ui.ExperimentalUI.isNewUI
 import com.intellij.ui.MouseDragHelper
 import com.intellij.ui.UIBundle
 import com.intellij.ui.layout.migLayout.*
@@ -95,7 +96,6 @@ abstract class ToolWindowHeader internal constructor(
     val component = toolbar.component
     component.border = JBUI.Borders.empty(2, 0)
     component.isOpaque = false
-    component.isVisible = !Registry.`is`("ide.experimental.ui")
     @Suppress("LeakingThis")
     add(component)
 
@@ -161,6 +161,10 @@ abstract class ToolWindowHeader internal constructor(
       westPanel.add(contentUi.tabComponent, CC().grow().pushX())
     else
       westPanel.add(contentUi.tabComponent, CC().growY())
+    val toolbar = toolbarWest
+    if (toolbar != null) {
+      westPanel.add(toolbar.component, CC().pushX()) //It always should stay after tab component
+    }
   }
 
   override fun addNotify() {
@@ -195,24 +199,23 @@ abstract class ToolWindowHeader internal constructor(
     }
   }
 
-  private fun initWestToolBar(westPanel: JPanel) {
-    toolbarWest = ActionManager.getInstance().createActionToolbar(ActionPlaces.TOOLWINDOW_TITLE, DefaultActionGroup(actionGroupWest), true)
-    toolbarWest!!.setTargetComponent(this)
-    toolbarWest!!.layoutPolicy = ActionToolbar.NOWRAP_LAYOUT_POLICY
-    toolbarWest!!.setReservePlaceAutoPopupIcon(false)
-    val component = toolbarWest!!.component
-    component.isOpaque = false
-    component.border = JBUI.Borders.empty()
-    westPanel.add(component)
-  }
-
   override fun uiSettingsChanged(uiSettings: UISettings) {
     clearCaches()
   }
 
   fun setTabActions(actions: Array<AnAction>) {
     if (toolbarWest == null) {
-      initWestToolBar(westPanel)
+      toolbarWest = ActionManager.getInstance().createActionToolbar(ActionPlaces.TOOLWINDOW_TITLE, DefaultActionGroup(actionGroupWest),
+                                                                    true)
+      with(toolbarWest as ActionToolbarImpl) {
+        targetComponent = this
+        setForceMinimumSize(true)
+        layoutPolicy = ActionToolbar.NOWRAP_LAYOUT_POLICY
+        setReservePlaceAutoPopupIcon(false)
+        isOpaque = false
+        border = JBUI.Borders.empty()
+        westPanel.add(this, CC().pushX())
+      }
     }
     actionGroupWest.removeAll()
     actionGroupWest.addSeparator()
@@ -243,13 +246,14 @@ abstract class ToolWindowHeader internal constructor(
     val drawTopLine = type != ToolWindowType.FLOATING && !UIUtil.isClientPropertyTrue(nearestDecorator, InternalDecoratorImpl.INACTIVE_LOOK)
     var drawBottomLine = true
 
-    if (Registry.`is`("ide.experimental.ui")) {
+    if (isNewUI()) {
       drawBottomLine = (toolWindow.largeStripeAnchor == ToolWindowAnchor.BOTTOM
                         || (toolWindow.windowInfo.contentUiType == ToolWindowContentUiType.TABBED && toolWindow.contentManager.contentCount > 1)
                         || ToggleToolbarAction.hasVisibleToolwindowToolbars(toolWindow))
 
       if (this.drawBottomLine != drawBottomLine) {
-        activeImage = drawToBuffer(g2d, true, r.height, drawTopLine, drawBottomLine)
+        //no active header for new UI
+        activeImage = drawToBuffer(g2d, false, r.height, drawTopLine, drawBottomLine)
         this.image = drawToBuffer(g2d, false, r.height, drawTopLine, drawBottomLine)
         this.drawBottomLine = drawBottomLine
       }

@@ -1,7 +1,6 @@
 // Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package git4idea.ui.branch;
 
-import com.intellij.application.options.RegistryManager;
 import com.intellij.dvcs.DvcsUtil;
 import com.intellij.dvcs.branch.DvcsSyncSettings;
 import com.intellij.dvcs.repo.Repository;
@@ -147,7 +146,7 @@ public class GitBranchWidget extends DvcsStatusWidget<GitRepository> {
 
     @Override
     public boolean isAvailable(@NotNull Project project) {
-      return !ToolbarSettings.getInstance().isVisible() &&
+      return isEnabledByDefault() &&
              !GitRepositoryManager.getInstance(project).getRepositories().isEmpty();
     }
 
@@ -158,7 +157,7 @@ public class GitBranchWidget extends DvcsStatusWidget<GitRepository> {
 
     @Override
     public boolean isEnabledByDefault() {
-      return !ToolbarSettings.getInstance().isVisible();
+      return !ToolbarSettings.getInstance().isVisible() || !ToolbarSettings.getInstance().isEnabled();
     }
 
     @Override

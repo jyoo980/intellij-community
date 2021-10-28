@@ -155,6 +155,7 @@
     </group>
 
     <group id="Bookmarks" popup="true">
+      <action id="AddAnotherBookmark" class="com.intellij.ide.bookmark.actions.AddAnotherBookmarkAction"/>
       <action id="EditBookmark" icon="AllIcons.Actions.Edit"
               class="com.intellij.ide.bookmark.actions.EditBookmarkAction"/>
       <action id="ToggleBookmark" class="com.intellij.ide.bookmark.actions.ToggleBookmarkAction"/>
@@ -302,6 +303,7 @@
     </group>
 
     <group id="popup@BookmarkContextMenu">
+      <reference ref="AddAnotherBookmark"/>
       <reference ref="EditBookmark"/>
       <reference ref="ToggleBookmark"/>
       <reference ref="DeleteMnemonicFromBookmark"/>
@@ -309,6 +311,10 @@
       <separator/>
 
       <add-to-group group-id="EditorGutterPopupMenu" anchor="after" relative-to-action="EditorGutterVcsPopupMenu"/>
+    </group>
+
+    <group id="popup@ExpandableBookmarkContextMenu" popup="true">
+      <reference ref="popup@BookmarkContextMenu"/>
     </group>
 
     <action id="GotoDeclarationOnly" class="com.intellij.codeInsight.navigation.actions.GotoDeclarationOnlyAction"/>
@@ -323,10 +329,33 @@
 
       <add-to-group group-id="ViewMenu" anchor="after" relative-to-action="ViewAppearanceGroup"/>
     </group>
+
+    <group id="Documentation.Navigation">
+      <action id="Documentation.Back" icon="AllIcons.Actions.Back" use-shortcut-of="Back"
+              class="com.intellij.lang.documentation.ide.actions.DocumentationBackAction"/>
+      <action id="Documentation.Forward" icon="AllIcons.Actions.Forward" use-shortcut-of="Forward"
+              class="com.intellij.lang.documentation.ide.actions.DocumentationForwardAction"/>
+      <action id="Documentation.EditSource" icon="AllIcons.Actions.EditSource" use-shortcut-of="EditSource"
+              class="com.intellij.lang.documentation.ide.actions.DocumentationEditSourceAction"/>
+    </group>
+    <action id="Documentation.ViewExternal" icon="AllIcons.General.Web" use-shortcut-of="ExternalJavaDoc"
+            class="com.intellij.lang.documentation.ide.actions.DocumentationViewExternalAction"/>
+    <group id="Documentation.PrimaryGroup">
+      <!--
+      These actions are added to the context menu, to the popup menu, and to the toolbar.
+      This group should be used to register additional documentation actions.
+      -->
+      <reference ref="Documentation.Navigation"/>
+      <reference ref="Documentation.ViewExternal"/>
+    </group>
     <action id="Documentation.ToggleShowInPopup"
             class="com.intellij.lang.documentation.ide.actions.ToggleShowDocsInPopupAction"/>
-    <action id="Documentation.TurnOffAutoUpdate"
-            class="com.intellij.lang.documentation.ide.actions.TurnOffAutoUpdateAction"
+    <action id="Documentation.ToggleAutoShow"
+            class="com.intellij.lang.documentation.ide.actions.ToggleAutoShowAction"/>
+    <action id="Documentation.ToggleAutoUpdate"
+            class="com.intellij.lang.documentation.ide.actions.ToggleAutoUpdateAction"/>
+    <action id="Documentation.KeepTab"
+            class="com.intellij.lang.documentation.ide.actions.KeepTabAction"
             icon="AllIcons.Toolbar.Pin"
             use-shortcut-of="QuickJavaDoc">
       <add-to-group group-id="ToolWindowContextMenu" anchor="last"/>
@@ -376,6 +405,7 @@
       <action id="GotoClass" class="com.intellij.ide.actions.GotoClassAction"/>
       <action id="GotoFile" class="com.intellij.ide.actions.GotoFileAction">
         <override-text place="MainMenu"/>
+        <add-to-group group-id="EditorTabsEntryPoint" anchor="after" relative-to-action="RecentLocations"/>
       </action>
       <action id="GotoSymbol" class="com.intellij.ide.actions.GotoSymbolAction">
         <override-text place="MainMenu"/>
@@ -762,7 +792,7 @@
       <separator/>
       <reference ref="ProjectViewPopupMenuRefactoringGroup"/>
       <separator/>
-      <reference ref="AddToFavorites"/>
+      <reference ref="popup@ExpandableBookmarkContextMenu"/>
       <separator/>
       <reference ref="ProjectViewPopupMenuModifyGroup"/>
       <separator/>

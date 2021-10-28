@@ -20,6 +20,8 @@ interface ToolbarSettings : PersistentStateComponent<ExperimentalToolbarSettings
   var isEnabled: Boolean
 
   var isVisible: Boolean
+
+  var navBarVisible: Boolean
 }
 
 @ApiStatus.Internal
@@ -27,5 +29,7 @@ interface ToolbarSettings : PersistentStateComponent<ExperimentalToolbarSettings
 class ExperimentalToolbarSettingsState : BaseState() {
 
   @get:OptionTag("SHOW_NEW_MAIN_TOOLBAR")
-  var showNewMainToolbar by property(false)
+  var showNewMainToolbar by property(true)
+  @get:OptionTag("SHOW_NAV_BAR_WITH_NEW_TOOLBAR")
+  var showNavBarWithNewToolbar by property(false)
 }

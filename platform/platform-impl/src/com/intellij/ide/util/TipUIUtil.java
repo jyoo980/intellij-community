@@ -103,7 +103,7 @@ public final class TipUIUtil {
     return tip;
   }
 
-  private static @NlsSafe String getTipText(@Nullable TipAndTrickBean tip, Component component) {
+  static @NlsSafe String getTipText(@Nullable TipAndTrickBean tip, Component component) {
     if (tip == null) return IdeBundle.message("no.tip.of.the.day");
     try {
       StringBuilder text = new StringBuilder();
@@ -117,12 +117,13 @@ public final class TipUIUtil {
       }
       else {
         PluginDescriptor pluginDescriptor = tip.getPluginDescriptor();
-        ClassLoader tipLoader = pluginDescriptor == null ? TipUIUtil.class.getClassLoader() :
-                                ObjectUtils.notNull(pluginDescriptor.getPluginClassLoader(), TipUIUtil.class.getClassLoader());
+        ClassLoader tipLoader = pluginDescriptor != null ?
+                                ObjectUtils.notNull(pluginDescriptor.getClassLoader(), TipUIUtil.class.getClassLoader()) :
+                                TipUIUtil.class.getClassLoader();
 
         DynamicBundle.LanguageBundleEP langBundle = findLanguageBundle();
         if (langBundle != null) {
-          tipLoader = langBundle.pluginDescriptor.getPluginClassLoader();
+          tipLoader = langBundle.pluginDescriptor.getClassLoader();
         }
 
         String ideCode = ApplicationInfoEx.getInstanceEx().getApiVersionAsNumber().getProductCode().toLowerCase(Locale.ROOT);
@@ -147,7 +148,7 @@ public final class TipUIUtil {
         cssText = cssResourceStream != null ? ResourceUtil.loadText(cssResourceStream) : "";
       }
 
-      updateShortcuts(text);
+      updateShortcuts(text, tip.toString());
       String replaced = text.toString().replace("&productName;", ApplicationNamesInfo.getInstance().getFullProductName());
       String major = ApplicationInfo.getInstance().getMajorVersion();
       replaced = replaced.replace("&majorVersion;", major);
@@ -280,7 +281,7 @@ public final class TipUIUtil {
     }
   }
 
-  private static void updateShortcuts(StringBuilder text) {
+  private static void updateShortcuts(StringBuilder text, String tipDescription) {
     int lastIndex = 0;
     while(true) {
       lastIndex = text.indexOf(SHORTCUT_ENTITY, lastIndex);
@@ -302,7 +303,8 @@ public final class TipUIUtil {
         }
       }
       if (shortcutText == null) {
-        shortcutText = "<no shortcut for action " + actionId + ">";
+        LOG.warn(tipDescription + ": no shortcut is assigned for the action " + actionId);
+        shortcutText = "&lt;No shortcut is assigned for the action&gt;";
       }
       text.replace(lastIndex, actionIdEnd + 1, shortcutText);
       lastIndex += shortcutText.length();

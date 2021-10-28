@@ -321,7 +321,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
   private boolean myCharKeyPressed;
   private boolean myNeedToSelectPreviousChar;
 
-  private boolean myDocumentChangeInProgress;
+  boolean myDocumentChangeInProgress;
   private boolean myErrorStripeNeedsRepaint;
 
   private String myContextMenuGroupId = IdeActions.GROUP_BASIC_EDITOR_POPUP;
@@ -2584,7 +2584,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
                 oldVisLeadSelectionStart = selectionModel.getSelectionEndPosition();
               }
             }
-            else if (mySettings.isBlockCursor()) {
+            else if (mySettings.isBlockCursor() && Registry.is("editor.block.caret.selection.vim-like")) {
               // adjust selection range, so that it covers caret location
               if (mySelectionModel.hasSelection() && oldVisLeadSelectionStart.equals(mySelectionModel.getSelectionEndPosition())) {
                 oldVisLeadSelectionStart = prevSelectionVisualPosition(oldVisLeadSelectionStart);

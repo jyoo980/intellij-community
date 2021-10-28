@@ -3,20 +3,17 @@ package com.intellij.lang.documentation.ide.ui
 
 import com.intellij.codeInsight.CodeInsightBundle
 import com.intellij.codeInsight.documentation.*
-import com.intellij.codeInsight.documentation.DocumentationManager.decorate
-import com.intellij.codeInsight.documentation.DocumentationManager.getLink
-import com.intellij.codeInsight.hint.HintManagerImpl.ActionToIgnore
-import com.intellij.icons.AllIcons
+import com.intellij.codeInsight.documentation.DocumentationManager.*
 import com.intellij.ide.DataManager
 import com.intellij.lang.documentation.DocumentationData
-import com.intellij.lang.documentation.ide.actions.DOCUMENTATION_HISTORY_DATA_KEY
-import com.intellij.lang.documentation.ide.actions.DOCUMENTATION_TARGET_POINTER_KEY
-import com.intellij.lang.documentation.ide.actions.primaryActions
+import com.intellij.lang.documentation.ide.actions.DOCUMENTATION_BROWSER
+import com.intellij.lang.documentation.ide.actions.DOCUMENTATION_HISTORY
+import com.intellij.lang.documentation.ide.actions.PRIMARY_GROUP_ID
+import com.intellij.lang.documentation.ide.actions.registerBackForwardActions
 import com.intellij.lang.documentation.ide.impl.DocumentationBrowser
 import com.intellij.lang.documentation.impl.DocumentationRequest
-import com.intellij.navigation.TargetPresentation
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.actionSystem.*
+import com.intellij.openapi.actionSystem.DataProvider
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -30,7 +27,6 @@ import kotlinx.coroutines.*
 import org.jetbrains.annotations.Nls
 import java.awt.Color
 import java.awt.Rectangle
-import javax.swing.Icon
 import javax.swing.JScrollPane
 import javax.swing.SwingUtilities
 
@@ -66,16 +62,14 @@ internal class DocumentationUI(
       applyStateLater(request, result)
     })
 
-    val primaryActions = primaryActions()
-    for (action in linkHandler.createLinkActions() + primaryActions) {
+    for (action in linkHandler.createLinkActions()) {
       action.registerCustomShortcutSet(editorPane, this)
     }
-    val externalDocAction = ExternalDocAction()
-    externalDocAction.registerCustomShortcutSet(editorPane, this)
+    registerBackForwardActions(editorPane)
 
     val contextMenu = PopupHandler.installPopupMenu(
       editorPane,
-      DefaultActionGroup(primaryActions + externalDocAction),
+      PRIMARY_GROUP_ID,
       "documentation.pane.content.menu"
     )
     Disposer.register(this) { editorPane.removeMouseListener(contextMenu) }
@@ -86,14 +80,11 @@ internal class DocumentationUI(
   }
 
   override fun getData(dataId: String): Any? {
-    return if (DOCUMENTATION_HISTORY_DATA_KEY.`is`(dataId)) {
-      browser.history
-    }
-    else if (DOCUMENTATION_TARGET_POINTER_KEY.`is`(dataId)) {
-      browser.targetPointer
-    }
-    else {
-      null
+    return when {
+      DOCUMENTATION_BROWSER.`is`(dataId) -> browser
+      DOCUMENTATION_HISTORY.`is`(dataId) -> browser.history
+      SELECTED_QUICK_DOC_TEXT.`is`(dataId) -> editorPane.selectedText?.replace(160.toChar(), ' ') // IDEA-86633
+      else -> null
     }
   }
 
@@ -141,9 +132,19 @@ internal class DocumentationUI(
       showMessage(CodeInsightBundle.message("no.documentation.found"))
       return
     }
-    val decorated = renderDocumentation(data, request) {
-      htmlFactory.registerIcon(it)
+    val presentation = request.presentation
+    val locationChunk = presentation.locationText?.let { locationText ->
+      presentation.locationIcon?.let { locationIcon ->
+        val iconKey = htmlFactory.registerIcon(locationIcon)
+        HtmlChunk.fragment(
+          HtmlChunk.tag("icon").attr("src", iconKey),
+          HtmlChunk.nbsp(),
+          HtmlChunk.text(locationText)
+        )
+      } ?: HtmlChunk.text(locationText)
     }
+    val linkChunk = getLink(presentation.presentableText, data.externalUrl)
+    val decorated = decorate(data.html, locationChunk, linkChunk)
     update(decorated, data.anchor)
   }
 
@@ -199,43 +200,6 @@ internal class DocumentationUI(
       if (ScreenReader.isActive()) {
         editorPane.caretPosition = 0
       }
-    }
-  }
-
-  private inner class ExternalDocAction : AnAction(
-    CodeInsightBundle.messagePointer("javadoc.action.view.external"),
-    AllIcons.General.Web
-  ), ActionToIgnore {
-
-    init {
-      shortcutSet = ActionManager.getInstance().getAction(IdeActions.ACTION_EXTERNAL_JAVADOC).shortcutSet
-    }
-
-    override fun update(e: AnActionEvent) {
-      e.presentation.isEnabledAndVisible = browser.currentExternalUrl() != null
-    }
-
-    override fun actionPerformed(e: AnActionEvent) {
-      browser.openCurrentExternalUrl()
-    }
-  }
-
-  companion object {
-    @Nls
-    fun renderDocumentation(data: DocumentationData, request: DocumentationRequest, iconKeyProvider: (Icon) -> String): String {
-      val presentation = request.presentation
-      val locationChunk = presentation.locationText?.let { locationText ->
-        presentation.locationIcon?.let { locationIcon ->
-          val iconKey = iconKeyProvider(locationIcon)
-          HtmlChunk.fragment(
-            HtmlChunk.tag("icon").attr("src", iconKey),
-            HtmlChunk.nbsp(),
-            HtmlChunk.text(locationText)
-          )
-        } ?: HtmlChunk.text(locationText)
-      }
-      val linkChunk = getLink(presentation.presentableText, data.externalUrl)
-      return decorate(data.html, locationChunk, linkChunk)
     }
   }
 }

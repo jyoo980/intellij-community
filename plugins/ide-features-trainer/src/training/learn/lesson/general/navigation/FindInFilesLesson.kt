@@ -21,6 +21,7 @@ import training.dsl.*
 import training.learn.LessonsBundle
 import training.learn.course.KLesson
 import training.ui.LearningUiUtil.findComponentWithTimeout
+import training.util.isToStringContains
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import javax.swing.JButton
@@ -149,7 +150,7 @@ class FindInFilesLesson(override val existedFile: String)
       val replaceAllButtonText = FindBundle.message("find.popup.replace.all.button").dropMnemonic()
       text(LessonsBundle.message("find.in.files.press.replace.all", strong(replaceAllButtonText)))
       triggerByUiComponentAndHighlight { button: JButton ->
-        button.text?.contains(replaceAllButtonText) == true
+        button.text.isToStringContains(replaceAllButtonText)
       }
       stateCheck {
         insideConfirmation()
@@ -215,6 +216,11 @@ class FindInFilesLesson(override val existedFile: String)
   override val testScriptProperties = TaskTestContext.TestScriptProperties(10)
 
   override val suitableTips = listOf("FindReplaceToggle", "FindInPath")
+
+  override val helpLinks: Map<String, String> get() = mapOf(
+    Pair(LessonsBundle.message("find.in.files.help.link"),
+         LessonUtil.getHelpLink("finding-and-replacing-text-in-project.html")),
+  )
 }
 
 private fun resetFindSettings(project: Project) {

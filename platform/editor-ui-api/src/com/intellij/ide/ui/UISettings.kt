@@ -168,6 +168,7 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     get() = state.showNavigationBar
     set(value) {
       state.showNavigationBar = value
+      ToolbarSettings.Instance.navBarVisible = value
     }
 
   var showMembersInNavigationBar: Boolean
@@ -667,12 +668,6 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     if (state.editorAAType != AntialiasingType.SUBPIXEL) {
       editorAAType = state.editorAAType
       state.editorAAType = AntialiasingType.SUBPIXEL
-    }
-    if (state.ideAAType == AntialiasingType.SUBPIXEL && !AntialiasingType.canUseSubpixelAAForIDE()) {
-      state.ideAAType = AntialiasingType.GREYSCALE
-    }
-    if (state.editorAAType == AntialiasingType.SUBPIXEL && !AntialiasingType.canUseSubpixelAAForEditor()) {
-      state.editorAAType = AntialiasingType.GREYSCALE
     }
     if (!state.allowMergeButtons) {
       Registry.get("ide.allow.merge.buttons").setValue(false)

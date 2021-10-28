@@ -26,7 +26,7 @@ internal class ExperimentalToolbarSettings private constructor() : ToolbarSettin
                                                                    Disposable {
   companion object {
     private val logger = logger<ExperimentalToolbarSettings>()
-    private var newToolbarEnabled = RegistryManager.getInstance().get("ide.widget.toolbar")
+    private val newToolbarEnabled = RegistryManager.getInstance().get("ide.widget.toolbar")
   }
 
   private var toolbarState = ExperimentalToolbarSettingsState()
@@ -41,7 +41,7 @@ internal class ExperimentalToolbarSettings private constructor() : ToolbarSettin
 
       val uiSettings = UISettings.instance
       val uiSettingsState = uiSettings.state
-      uiSettingsState.showNavigationBar = !booleanValue && uiSettingsState.showNavigationBar
+      uiSettingsState.showNavigationBar = !booleanValue
       uiSettings.fireUISettingsChanged()
     }
   }
@@ -54,6 +54,8 @@ internal class ExperimentalToolbarSettings private constructor() : ToolbarSettin
 
     Disposer.register(application, this)
     newToolbarEnabled.addListener(ToolbarRegistryListener(), this)
+
+    UISettings.instance.state.showNavigationBar = !(isEnabled && !navBarVisible)
   }
 
   override fun getState(): ExperimentalToolbarSettingsState = toolbarState
@@ -64,6 +66,8 @@ internal class ExperimentalToolbarSettings private constructor() : ToolbarSettin
     if (isEnabled) {
       logger.info("Loaded state: $state")
     }
+
+    UISettings.instance.state.showNavigationBar = !(isEnabled && !navBarVisible)
   }
 
   override fun dispose() {}
@@ -79,11 +83,19 @@ internal class ExperimentalToolbarSettings private constructor() : ToolbarSettin
    * True if new the toolbar is visible
    */
   override var isVisible: Boolean
-    get() = toolbarState.showNewMainToolbar && isEnabled
+    get() = toolbarState.showNewMainToolbar
     set(value) {
       toolbarState.showNewMainToolbar = value
-
       val uiSettingState = UISettings.instance.state
       uiSettingState.showMainToolbar = !value && uiSettingState.showMainToolbar
+      UISettings.instance.fireUISettingsChanged()
+    }
+
+  override var navBarVisible: Boolean
+    get() = toolbarState.showNavBarWithNewToolbar
+    set(value) {
+      if (isEnabled && isVisible) {
+        toolbarState.showNavBarWithNewToolbar = value
+      }
     }
 }

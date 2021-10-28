@@ -60,7 +60,7 @@ open class PluginAdvertiserService {
         dependencies[implementationName].forEach { putFeature(it) }
       }
       else {
-        MarketplaceRequests.Instance
+        MarketplaceRequests.getInstance()
           .getFeatures(featureType, implementationName)
           .mapNotNull { it.toPluginData() }
           .forEach { putFeature(it) }
@@ -128,7 +128,7 @@ open class PluginAdvertiserService {
 
             PluginBooleanOptionDescriptor.togglePluginState(
               disabledDescriptors,
-              PluginEnableDisableAction.ENABLE_GLOBALLY,
+              true,
             )
           }
         }

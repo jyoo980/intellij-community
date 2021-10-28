@@ -335,6 +335,8 @@ public class UrlClassLoader extends ClassLoader implements ClassPath.ClassDataCo
     String canonicalPath = toCanonicalPath(name);
     Resource resource = classPath.findResource(canonicalPath);
     if (resource == null && canonicalPath.startsWith("/") && classPath.findResource(canonicalPath.substring(1)) != null) {
+      // reporting malformed paths only when there's a resource at the right one - which is rarely the case
+      // (see also `PluginClassLoader#doFindResource`)
       logError("Calling `ClassLoader#getResource` with leading slash doesn't work; strip", new IllegalArgumentException(name));
     }
     return resource;
@@ -529,8 +531,9 @@ public class UrlClassLoader extends ClassLoader implements ClassPath.ClassDataCo
         .invokeExact(message, t);
     }
     catch (Throwable tt) {
-      tt.addSuppressed(t);
-      tt.printStackTrace(System.err);
+      t.addSuppressed(tt);
+      System.err.println(getClass().getName() + ": " +  message);
+      t.printStackTrace(System.err);
     }
   }
 

@@ -73,11 +73,11 @@ public final class MavenIndex implements MavenSearchIndex {
   private final Kind myKind;
 
   private volatile Long myUpdateTimestamp;
-  private volatile String myDataDirName;
   private volatile IndexData myData;
   private volatile String myFailureMessage;
+  private volatile boolean isBroken;
 
-  private boolean isBroken;
+  private String myDataDirName;
   private final IndexListener myListener;
   private final Lock indexUpdateLock = new ReentrantLock();
 
@@ -204,15 +204,16 @@ public final class MavenIndex implements MavenSearchIndex {
   private void doOpen() throws Exception {
     ProgressManager.getInstance().computeInNonCancelableSection(() -> {
       File dataDir;
-      if (myDataDirName == null) {
-        dataDir = createNewDataDir();
-        myDataDirName = dataDir.getName();
-      }
-      else {
-        dataDir = new File(myDir, myDataDirName);
-        dataDir.mkdirs();
-      }
       synchronized (this) {
+        if (myDataDirName == null) {
+          dataDir = createNewDataDir();
+          myDataDirName = dataDir.getName();
+        }
+        else {
+          dataDir = new File(myDir, myDataDirName);
+          dataDir.mkdirs();
+        }
+
         if (myData != null) {
           myData.close(true);
         }
@@ -350,7 +351,7 @@ public final class MavenIndex implements MavenSearchIndex {
         if (fullUpdate) {
           MavenIndexId mavenIndexId = getMavenIndexId(newDataContextDir, "update");
           try {
-            updateContext(mavenIndexId, settings, progress);
+            updateNexusContext(mavenIndexId, settings, progress);
           }
           finally {
             myNexusIndexer.releaseIndex(mavenIndexId);
@@ -402,7 +403,9 @@ public final class MavenIndex implements MavenSearchIndex {
     );
   }
 
-  private void updateContext(@NotNull MavenIndexId indexId, @Nullable MavenGeneralSettings settings, @NotNull MavenProgressIndicator progress)
+  private void updateNexusContext(@NotNull MavenIndexId indexId,
+                                  @Nullable MavenGeneralSettings settings,
+                                  @NotNull MavenProgressIndicator progress)
     throws MavenServerIndexerException, MavenProcessCanceledException {
     myNexusIndexer.updateIndex(indexId, settings, progress);
   }
@@ -523,43 +526,47 @@ public final class MavenIndex implements MavenSearchIndex {
     return MavenIndices.createNewDir(myDir, DATA_DIR_PREFIX, 100);
   }
 
-  public void addArtifact(final File artifactFile) {
-    doIndexAndRecoveryTask(() -> {
-      IndexData indexData = myData;
-      IndexedMavenId id = indexData.addArtifact(artifactFile);
-      if (id == null) return null;
+  /**
+   * Trying to add artifact to index.
+   *
+   * @return true if artifact added to index else need retry
+   */
+  public boolean tryAddArtifact(final File artifactFile) {
+    return doIndexAndRecoveryTask(() -> {
+      boolean locked = indexUpdateLock.tryLock();
+      if (!locked) return false;
+      try {
+        IndexData indexData = myData;
+        IndexedMavenId id = indexData.addArtifact(artifactFile);
+        if (id == null) return true;
 
-      indexData.hasGroupCache.put(id.groupId, true);
+        String groupWithArtifact = id.groupId + ":" + id.artifactId;
 
-      String groupWithArtifact = id.groupId + ":" + id.artifactId;
-
-      indexData.hasArtifactCache.put(groupWithArtifact, true);
-      indexData.hasVersionCache.put(groupWithArtifact + ':' + id.version, true);
-
-      addToCache(indexData.groupToArtifactMap, id.groupId, id.artifactId);
-      addToCache(indexData.groupWithArtifactToVersionMap, groupWithArtifact, id.version);
-      if ("maven-archetype".equals(id.packaging)) {
-        addToCache(indexData.archetypeIdToDescriptionMap, groupWithArtifact, id.version + ":" + StringUtil.notNullize(id.description));
+        addToCache(indexData.groupToArtifactMap, id.groupId, id.artifactId);
+        addToCache(indexData.groupWithArtifactToVersionMap, groupWithArtifact, id.version);
+        if ("maven-archetype".equals(id.packaging)) {
+          addToCache(indexData.archetypeIdToDescriptionMap, groupWithArtifact, id.version + ":" + StringUtil.notNullize(id.description));
+        }
+        indexData.flush();
+        return true;
+      } finally {
+        indexUpdateLock.unlock();
       }
-      indexData.flush();
-
-      return null;
-    }, null);
+    }, true);
   }
 
   private static void addToCache(PersistentHashMap<String, Set<String>> cache, String key, String value) throws IOException {
     synchronized (cache) {
       Set<String> values = cache.get(key);
       if (values == null) values = new HashSet<>();
-      values.add(value);
-      cache.put(key, values);
+      if (values.add(value)) {
+        cache.put(key, values);
+      }
     }
   }
 
   public Collection<String> getGroupIds() {
-    return doIndexTask(() -> {
-      return getGroupIdsRaw();
-    }, Collections.emptySet());
+    return doIndexTask(() -> getGroupIdsRaw(), Collections.emptySet());
   }
 
   public Set<String> getArtifactIds(final String groupId) {
@@ -584,14 +591,15 @@ public final class MavenIndex implements MavenSearchIndex {
     if (isBroken) return false;
 
     IndexData indexData = myData;
-    return hasValue(indexData.groupToArtifactMap, indexData.hasGroupCache, groupId);
+    return doIndexTask(() -> indexData.groupToArtifactMap.containsMapping(groupId), false);
   }
 
   public boolean hasArtifactId(String groupId, String artifactId) {
     if (isBroken) return false;
 
     IndexData indexData = myData;
-    return hasValue(indexData.groupWithArtifactToVersionMap, indexData.hasArtifactCache, groupId + ":" + artifactId);
+    String key = groupId + ":" + artifactId;
+    return doIndexTask(() -> indexData.groupWithArtifactToVersionMap.containsMapping(key), false);
   }
 
   public boolean hasVersion(String groupId, String artifactId, final String version) {
@@ -600,13 +608,7 @@ public final class MavenIndex implements MavenSearchIndex {
     final String groupWithArtifactWithVersion = groupId + ":" + artifactId + ':' + version;
     String groupWithArtifact = groupWithArtifactWithVersion.substring(0, groupWithArtifactWithVersion.length() - version.length() - 1);
     IndexData indexData = myData;
-    return indexData.hasVersionCache.computeIfAbsent(groupWithArtifactWithVersion, gav -> doIndexTask(
-      () -> notNullize(indexData.groupWithArtifactToVersionMap.get(groupWithArtifact)).contains(version),
-      false));
-  }
-
-  private boolean hasValue(final PersistentHashMap<String, ?> map, Map<String, Boolean> cache, final String value) {
-    return cache.computeIfAbsent(value, v -> doIndexTask(() -> map.containsMapping(v), false));
+    return doIndexTask(() -> notNullize(indexData.groupWithArtifactToVersionMap.get(groupWithArtifact)).contains(version), false);
   }
 
   public Set<MavenArtifactInfo> search(final String pattern, final int maxResult) {
@@ -644,11 +646,14 @@ public final class MavenIndex implements MavenSearchIndex {
       try {
         return task.doTask();
       }
+      catch (ProcessCanceledException e) {
+        throw e;
+      }
       catch (Exception e) {
         MavenLog.LOG.warn(e);
+        markAsBroken();
       }
     }
-    markAsBroken();
     return defaultValue;
   }
 
@@ -656,6 +661,9 @@ public final class MavenIndex implements MavenSearchIndex {
     if (!isBroken) {
       try {
         return task.doTask();
+      }
+      catch (ProcessCanceledException e) {
+        throw e;
       }
       catch (Exception e1) {
         MavenLog.LOG.warn(e1);
@@ -690,10 +698,6 @@ public final class MavenIndex implements MavenSearchIndex {
     final PersistentHashMap<String, Set<String>> groupWithArtifactToVersionMap;
     final PersistentHashMap<String, Set<String>> archetypeIdToDescriptionMap;
 
-    final Map<String, Boolean> hasGroupCache = new ConcurrentHashMap<>();
-    final Map<String, Boolean> hasArtifactCache = new ConcurrentHashMap<>();
-    final Map<String, Boolean> hasVersionCache = new ConcurrentHashMap<>();
-
     final MavenIndexId mavenIndexId;
 
     IndexData(File dir) throws MavenIndexException {
@@ -714,7 +718,7 @@ public final class MavenIndex implements MavenSearchIndex {
       return new PersistentHashMap<>(f.toPath(), EnumeratorStringDescriptor.INSTANCE, new SetDescriptor());
     }
 
-    public void close(boolean releaseIndexContext) throws MavenIndexException {
+    void close(boolean releaseIndexContext) throws MavenIndexException {
       MavenIndexException[] exceptions = new MavenIndexException[1];
 
       try {
@@ -742,17 +746,17 @@ public final class MavenIndex implements MavenSearchIndex {
       }
     }
 
-    public void flush() throws IOException {
+    void flush() {
       groupToArtifactMap.force();
       groupWithArtifactToVersionMap.force();
       archetypeIdToDescriptionMap.force();
     }
 
-    public IndexedMavenId addArtifact(File artifactFile) throws MavenServerIndexerException {
+    IndexedMavenId addArtifact(File artifactFile) throws MavenServerIndexerException {
       return myNexusIndexer.addArtifact(mavenIndexId, artifactFile);
     }
 
-    public Set<MavenArtifactInfo> search(String pattern, int maxResult) throws MavenServerIndexerException {
+    Set<MavenArtifactInfo> search(String pattern, int maxResult) throws MavenServerIndexerException {
       return myNexusIndexer.search(mavenIndexId, pattern, maxResult);
     }
   }

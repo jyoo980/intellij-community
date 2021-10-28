@@ -46,9 +46,6 @@ final class LinuxDistributionBuilder extends OsSpecificDistributionBuilder {
     BuildTasksImpl.generateBuildTxt(buildContext, unixDistPath)
     BuildTasksImpl.copyDistFiles(buildContext, unixDistPath)
     List<String> extraJars = BuildTasksImpl.addDbusJava(buildContext, unixDistPath)
-    if (buildContext.productProperties.addRemoteDevelopmentLibraries()) {
-      extraJars.addAll(BuildTasksImpl.addProjectorServer(buildContext, unixDistPath))
-    }
     BuildTasksImpl.appendLibsToClasspathJar(buildContext, unixDistPath, extraJars)
     Files.copy(ideaProperties, distBinDir.resolve(ideaProperties.fileName), StandardCopyOption.REPLACE_EXISTING)
     //todo[nik] converting line separators to unix-style make sense only when building Linux distributions under Windows on a local machine;
@@ -123,6 +120,7 @@ final class LinuxDistributionBuilder extends OsSpecificDistributionBuilder {
         filter(token: "product_full", value: fullName)
         filter(token: "product_uc", value: buildContext.productProperties.getEnvironmentVariableBaseName(buildContext.applicationInfo))
         filter(token: "product_vendor", value: buildContext.applicationInfo.shortCompanyName)
+        filter(token: "product_code", value: buildContext.applicationInfo.productCode)
         filter(token: "vm_options", value: vmOptionsFileName)
         filter(token: "system_selector", value: buildContext.systemSelector)
         filter(token: "ide_jvm_args", value: buildContext.additionalJvmArguments.join(' '))

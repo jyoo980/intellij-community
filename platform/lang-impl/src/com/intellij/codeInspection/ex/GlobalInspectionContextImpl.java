@@ -485,7 +485,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
       LocalInspectionsPass pass = new LocalInspectionsPass(file, document, range.getStartOffset(),
                                                            range.getEndOffset(), LocalInspectionsPass.EMPTY_PRIORITY_RANGE, true,
                                                            HighlightInfoProcessor.getEmpty(), inspectInjectedPsi);
-      pass.doInspectInBatch(this, inspectionManager, localTools);
+      pass.doInspectInBatch(this, localTools);
 
       assertUnderDaemonProgress();
 
@@ -692,7 +692,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
       public void visitElement(@NotNull RefEntity elem) {
         if (elem instanceof RefElement) {
           RefElement refElement = (RefElement)elem;
-          entitiesWithParents.put(refElement, (refElement).getInReferences());
+          entitiesWithParents.put(refElement, refElement.getInReferences());
           if (refElement.getInReferences().isEmpty() || refElement.getInReferences().contains(refElement)) {
             roots.add(refElement);
           }
@@ -808,9 +808,9 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
   }
 
   public @NotNull <T extends InspectionToolWrapper<?, ?>> List<T> getWrappersFromTools(@NotNull List<? extends Tools> localTools,
-                                                                                               @NotNull PsiFile file,
-                                                                                               boolean includeDoNotShow,
-                                                                                               @NotNull Predicate<? super T> filter) {
+                                                                                       @NotNull PsiFile file,
+                                                                                       boolean includeDoNotShow,
+                                                                                       @NotNull Predicate<? super T> filter) {
     return ContainerUtil.mapNotNull(localTools, tool -> {
       //noinspection unchecked
       T unwrapped = (T)tool.getEnabledTool(file, includeDoNotShow);
@@ -1027,7 +1027,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
         @Override
         public void visitFile(@NotNull PsiFile file) {
           if (LOG.isDebugEnabled()) {
-            LOG.debug("Code cleanup: searching for problems in file " + file.toString());
+            LOG.debug("Code cleanup: searching for problems in file " + file);
           }
 
           progressIndicator.setText(AbstractLayoutCodeProcessor.getPresentablePath(getProject(), file));
@@ -1052,7 +1052,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
               LocalInspectionsPass pass = new LocalInspectionsPass(file, file.getViewProvider().getDocument(), range != null ? range.getStartOffset() : 0,
                                                                    range != null ? range.getEndOffset() : file.getTextLength(), LocalInspectionsPass.EMPTY_PRIORITY_RANGE, true,
                                                                    HighlightInfoProcessor.getEmpty(), true);
-              Runnable runnable = () -> pass.doInspectInBatch(GlobalInspectionContextImpl.this, InspectionManager.getInstance(getProject()), lTools);
+              Runnable runnable = () -> pass.doInspectInBatch(GlobalInspectionContextImpl.this, lTools);
               ApplicationManager.getApplication().runReadAction(runnable);
 
               Set<ProblemDescriptor> localDescriptors = new TreeSet<>(CommonProblemDescriptor.DESCRIPTOR_COMPARATOR);
@@ -1178,8 +1178,11 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
       }
       try {
         InspectionEP extension = toolWrapper.getExtension();
-        ClassLoader classLoader = extension == null ? getClass().getClassLoader() : extension.getPluginDescriptor().getPluginClassLoader();
-        Constructor<?> constructor = Class.forName(presentationClass, true, classLoader).getConstructor(InspectionToolWrapper.class, GlobalInspectionContextImpl.class);
+        ClassLoader extensionClassLoader = extension != null ? extension.getPluginDescriptor().getPluginClassLoader() : null;
+        Constructor<?> constructor = Class.forName(presentationClass,
+                                                   true,
+                                                   extensionClassLoader != null ? extensionClassLoader : getClass().getClassLoader())
+          .getConstructor(InspectionToolWrapper.class, GlobalInspectionContextImpl.class);
         constructor.setAccessible(true);
         return (InspectionToolPresentation)constructor.newInstance(toolWrapper, this);
       }

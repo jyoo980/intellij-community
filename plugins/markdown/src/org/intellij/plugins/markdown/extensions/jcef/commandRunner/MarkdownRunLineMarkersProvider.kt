@@ -40,17 +40,17 @@ class MarkdownRunLineMarkersProvider : RunLineMarkerContributor() {
         return processBlock(lang, element)
       }
     }
+    val inCodeSpan = (element.hasType(MarkdownTokenTypes.BACKTICK)
+                      && element.parent.hasType(MarkdownElementTypes.CODE_SPAN)
+                      && element.parent.firstChild == element)
     if (!(element.hasType(MarkdownTokenTypes.CODE_FENCE_CONTENT)
-          || (element.hasType(MarkdownTokenTypes.BACKTICK)
-              && element.parent.hasType(MarkdownElementTypes.CODE_SPAN)
-              && element.parent.firstChild == element)
-         )) {
+          || inCodeSpan)) {
       return null
     }
 
     val dir = element.containingFile.virtualFile.parent.path
     val text = getText(element)
-    if (!matches(element.project, dir, true, text)) {
+    if (!matches(element.project, dir, true, text, allowRunConfigurations = inCodeSpan)) {
       return null
     }
 
@@ -75,11 +75,12 @@ class MarkdownRunLineMarkersProvider : RunLineMarkerContributor() {
         ?.fold(StringBuilder()) { acc, psiElement -> acc.append(psiElement.text) }
         .toString()
       val dir = element.containingFile.virtualFile.parent.path
-      return Info(AllIcons.RunConfigurations.TestState.Run_run, { runner.title() }, object : AnAction() {
+      val runAction = object : AnAction({ runner.title() }, AllIcons.RunConfigurations.TestState.Run_run) {
         override fun actionPerformed(e: AnActionEvent) {
           runner.run(text, e.project!!, dir, DefaultRunExecutor.getRunExecutorInstance())
         }
-      })
+      }
+      return Info(AllIcons.RunConfigurations.TestState.Run_run, { runner.title() }, runAction)
     }
     return null
   }
@@ -93,4 +94,3 @@ class MarkdownRunLineMarkersProvider : RunLineMarkerContributor() {
     return ""
   }
 }
-// todo: merge same line markers
