@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.wm.impl.content;
 
 import com.intellij.ide.IdeBundle;
@@ -20,6 +20,7 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.*;
 import com.intellij.openapi.wm.ex.ToolWindowManagerEx;
 import com.intellij.openapi.wm.impl.*;
+import com.intellij.ui.ExperimentalUI;
 import com.intellij.ui.MouseDragHelper;
 import com.intellij.ui.PopupHandler;
 import com.intellij.ui.components.panels.NonOpaquePanel;
@@ -405,8 +406,10 @@ public final class ToolWindowContentUi implements ContentUI, DataProvider {
       @Override
       public void mouseClicked(MouseEvent e) {
         if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
-          ToolWindowManagerEx manager = ui.window.getToolWindowManager();
-          manager.setMaximized(ui.window, !manager.isMaximized(ui.window));
+          if (ui.tabsLayout.myDoubleClickActions.isEmpty() || !(e.getComponent() instanceof ContentTabLabel)) {
+            ToolWindowManagerEx manager = ui.window.getToolWindowManager();
+            manager.setMaximized(ui.window, !manager.isMaximized(ui.window));
+          }
         }
       }
 
@@ -622,6 +625,9 @@ public final class ToolWindowContentUi implements ContentUI, DataProvider {
     if (PlatformDataKeys.TOOL_WINDOW.is(dataId)) {
       return window;
     }
+    else if (PlatformCoreDataKeys.HELP_ID.is(dataId)) {
+      return window.getHelpId();
+    }
     else if (CommonDataKeys.PROJECT.is(dataId)) {
       return window.getToolWindowManager().getProject();
     }
@@ -709,6 +715,9 @@ public final class ToolWindowContentUi implements ContentUI, DataProvider {
     private TabPanel() {
       super(new MigLayout(MigLayoutUtilKt.createLayoutConstraints(0, 0).noVisualPadding().fillY()));
       setBorder(JBUI.Borders.emptyRight(2));
+      if (ExperimentalUI.isNewToolWindowsStripes()) {
+        setBorder(JBUI.Borders.empty());
+      }
     }
 
     @Override
@@ -738,7 +747,7 @@ public final class ToolWindowContentUi implements ContentUI, DataProvider {
     public Dimension getPreferredSize() {
       Dimension size = new Dimension();
       size.height = 0;
-      size.width = TabContentLayout.TAB_LAYOUT_START + getInsets().left + getInsets().right;
+      size.width = TabContentLayout.getTabLayoutStart() + getInsets().left + getInsets().right;
       for (int i = 0; i < getComponentCount(); i++) {
         final Component each = getComponent(i);
         if (each.isVisible()) {

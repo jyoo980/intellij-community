@@ -15,17 +15,14 @@ import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.roots.ExternalLibraryDescriptor
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.testFramework.runInEdtAndWait
-import com.intellij.util.Function
 import com.intellij.util.containers.ContainerUtil
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.idea.configuration.*
-import org.jetbrains.kotlin.idea.gradle.configuration.*
 import org.jetbrains.kotlin.idea.gradleJava.configuration.KotlinGradleModuleConfigurator
 import org.jetbrains.kotlin.idea.gradleJava.configuration.KotlinJsGradleModuleConfigurator
 import org.jetbrains.kotlin.idea.gradleJava.configuration.KotlinWithGradleConfigurator
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
 import org.jetbrains.kotlin.idea.util.application.runReadAction
-import org.jetbrains.plugins.gradle.execution.test.runner.GradleTestRunConfigurationProducer
 import org.jetbrains.plugins.gradle.execution.test.runner.GradleTestTasksProvider
 import org.jetbrains.plugins.gradle.service.project.GradleProjectResolverUtil
 import org.jetbrains.plugins.gradle.tooling.annotation.TargetVersions
@@ -361,8 +358,9 @@ class GradleConfiguratorTest : KotlinGradleImportingTestCase() {
             ?: return ContainerUtil.emptyList()
         val projectPath = ExternalSystemApiUtil.getExternalProjectPath(module)
             ?: return ContainerUtil.emptyList()
-        val externalProjectInfo = ExternalSystemUtil.getExternalProjectInfo(module.project, GradleConstants.SYSTEM_ID, projectPath)
-            ?: return ContainerUtil.emptyList()
+        val externalProjectInfo =
+            ExternalSystemUtil.getExternalProjectInfo(module.project, GradleConstants.SYSTEM_ID, projectPath)
+                ?: return ContainerUtil.emptyList()
         val tasks: List<String>
         val gradlePath = GradleProjectResolverUtil.getGradlePath(module)
             ?: return ContainerUtil.emptyList()
@@ -684,7 +682,5 @@ class GradleConfiguratorTest : KotlinGradleImportingTestCase() {
     @TargetVersions("4.7+")
     fun testEnableFeatureSupportGSKWithSpecifyingPluginThroughIdAndXFlag() = testEnableFeatureSupportGSK()
 
-    override fun testDataDirName(): String {
-        return "configurator"
-    }
+    override fun testDataDirName(): String = "configurator"
 }

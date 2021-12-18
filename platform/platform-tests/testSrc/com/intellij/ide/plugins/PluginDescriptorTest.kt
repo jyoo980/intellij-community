@@ -6,7 +6,6 @@ import com.intellij.ide.plugins.cl.PluginClassLoader
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.util.BuildNumber
 import com.intellij.openapi.util.io.IoTestUtil
-import com.intellij.platform.util.plugins.DataLoader
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.UsefulTestCase
 import com.intellij.testFramework.assertions.Assertions.assertThat
@@ -31,6 +30,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.function.Function
 import java.util.function.Supplier
+import kotlin.io.path.name
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
@@ -50,7 +50,7 @@ private fun loadDescriptors(dir: Path, buildNumber: BuildNumber, disabledPlugins
 }
 
 private fun loadAndInitDescriptors(dir: Path, buildNumber: BuildNumber, disabledPlugins: Set<PluginId> = emptySet()): PluginManagerState {
-  return PluginManagerCore.initializePlugins(loadDescriptors(dir, buildNumber, disabledPlugins), UrlClassLoader.build().get(), false)
+  return PluginManagerCore.initializePlugins(loadDescriptors(dir, buildNumber, disabledPlugins), UrlClassLoader.build().get(), false, null)
 }
 
 class PluginDescriptorTest {
@@ -160,6 +160,26 @@ class PluginDescriptorTest {
     val descriptor = loadDescriptorInTest("noId")
     assertThat(descriptor).isNotNull()
     assertThat(descriptor.pluginId.idString).isEqualTo(descriptor.name)
+  }
+
+  @Test
+  fun testMetaInfInClasses() {
+    val descriptor = loadDescriptorInTest("metaInfInClasses")
+    assertThat(descriptor).isNotNull
+    assertThat(descriptor.pluginId.idString).isEqualTo("foo.bar")
+
+    assertThat(descriptor.jarFiles).isNotNull()
+    assertThat(descriptor.jarFiles!!.map { it.name }).isEqualTo(listOf("classes", "empty.jar"))
+  }
+
+  @Test
+  fun testStandaloneMetaInf() {
+    val descriptor = loadDescriptorInTest("standaloneMetaInf")
+    assertThat(descriptor).isNotNull
+    assertThat(descriptor.pluginId.idString).isEqualTo("foo.bar")
+
+    assertThat(descriptor.jarFiles).isNotNull()
+    assertThat(descriptor.jarFiles!!.map { it.name }).isEqualTo(listOf("classes", "empty.jar"))
   }
 
   @Test
@@ -489,7 +509,7 @@ private val testDataPath: String
   get() = "${PlatformTestUtil.getPlatformTestDataPath()}plugins/pluginDescriptor"
 
 private fun loadDescriptorInTest(dirName: String, disabledPlugins: Set<PluginId> = emptySet()): IdeaPluginDescriptorImpl {
-  return loadDescriptorInTest(Path.of(testDataPath, dirName), disabledPlugins)
+  return loadDescriptorInTest(Path.of(testDataPath, dirName), disabledPlugins = disabledPlugins)
 }
 
 fun readDescriptorForTest(path: Path, isBundled: Boolean, input: ByteArray, id: PluginId? = null): IdeaPluginDescriptorImpl {

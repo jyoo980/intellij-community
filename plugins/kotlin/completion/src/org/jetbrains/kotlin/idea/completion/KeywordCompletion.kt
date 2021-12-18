@@ -14,7 +14,6 @@ import com.intellij.psi.filters.*
 import com.intellij.psi.filters.position.LeftNeighbour
 import com.intellij.psi.filters.position.PositionElementFilter
 import com.intellij.psi.tree.IElementType
-import com.intellij.psi.tree.TokenSet
 import com.intellij.psi.util.parentOfType
 import com.intellij.psi.util.parentOfTypes
 import org.jetbrains.kotlin.KtNodeTypes
@@ -50,9 +49,6 @@ open class KeywordLookupObject {
 object KeywordCompletion {
     private val ALL_KEYWORDS = (KEYWORDS.types + SOFT_KEYWORDS.types)
         .map { it as KtKeywordToken }
-
-    private val KEYWORDS_TO_IGNORE_PREFIX =
-        TokenSet.create(OVERRIDE_KEYWORD /* it's needed to complete overrides that should be work by member name too */)
 
     private val INCOMPATIBLE_KEYWORDS_AROUND_SEALED = setOf(
         SEALED_KEYWORD,
@@ -124,7 +120,7 @@ object KeywordCompletion {
 
     private fun KtKeywordToken.getNextPossibleKeywords(position: PsiElement): Set<KtKeywordToken>? {
         return when {
-            this == SUSPEND_KEYWORD && position.getStrictParentOfType<KtTypeReference>() != null -> null
+            this == SUSPEND_KEYWORD && position.isInsideKtTypeReference -> null
             else -> COMPOUND_KEYWORDS[this]
         }
     }
@@ -133,6 +129,26 @@ object KeywordCompletion {
         val nextKeywords = COMPOUND_KEYWORDS_NOT_SUGGEST_TOGETHER[this] ?: return false
         return keywordToken in nextKeywords
     }
+
+    private fun ignorePrefixForKeyword(completionPosition: PsiElement, keywordToken: KtKeywordToken): Boolean =
+        when (keywordToken) {
+            // it's needed to complete overrides that should work by member name too
+            OVERRIDE_KEYWORD -> true
+
+            // keywords that might be used with labels (@label) after them
+            THIS_KEYWORD,
+            RETURN_KEYWORD,
+            BREAK_KEYWORD,
+            CONTINUE_KEYWORD -> {
+                // If the position is parsed as an expression and has a label, it means that the completion is performed
+                // in a place like `return@la<caret>`. The prefix matcher in this case will have its prefix == "la",
+                // and it won't match with the keyword text ("return" in this case).
+                // That's why we want to ignore the prefix matcher for such positions
+                completionPosition is KtExpressionWithLabel && completionPosition.getTargetLabel() != null
+            }
+
+            else -> false
+        }
 
     private fun handleCompoundKeyword(
         position: PsiElement,
@@ -169,7 +185,7 @@ object KeywordCompletion {
 
         if (keywordToken == DYNAMIC_KEYWORD && isJvmModule) return // not supported for JVM
 
-        if (keywordToken !in KEYWORDS_TO_IGNORE_PREFIX && !prefixMatcher.isStartMatch(keyword)) return
+        if (!ignorePrefixForKeyword(position, keywordToken) && !prefixMatcher.isStartMatch(keyword)) return
 
         if (!parserFilter(keywordToken)) return
 
@@ -341,6 +357,37 @@ object KeywordCompletion {
                     }
                 }
 
+                // for type references in places like 'listOf<' or 'List<' we want to filter almost all keywords
+                // (except maybe for 'suspend' and 'in'/'out', since they can be a part of a type reference)
+                is KtTypeReference -> {
+                    val shouldIntroduceTypeReferenceContext = when {
+
+                        // it can be a receiver type, or it can be a declaration's name,
+                        // so we don't want to change the context
+                        parent.isExtensionReceiverInCallableDeclaration -> false
+
+                        // it is probably an annotation entry, or a super class constructor's invocation,
+                        // in this case we don't want to change the context
+                        parent.parent is KtConstructorCalleeExpression -> false
+
+                        else -> true
+                    }
+
+                    if (shouldIntroduceTypeReferenceContext) {
+
+                        // we cannot just search for an outer element of KtTypeReference type, because
+                        // we can be inside the lambda type args (e.g. 'val foo: (bar: <caret>) -> Unit');
+                        // that's why we have to do a more precise check
+                        val prefixText = if (parent.isTypeArgumentOfOuterKtTypeReference) {
+                            "fun foo(x: X<"
+                        } else {
+                            "fun foo(x: "
+                        }
+
+                        return buildFilterWithContext(prefixText, contextElement = parent, position)
+                    }
+                }
+
                 is KtDeclaration -> {
                     when (parent.parent) {
                         is KtClassOrObject -> {
@@ -363,6 +410,21 @@ object KeywordCompletion {
 
         return buildFilterWithReducedContext("", null, position)
     }
+
+    private val KtTypeReference.isExtensionReceiverInCallableDeclaration: Boolean
+        get() {
+            val parent = parent
+            return parent is KtCallableDeclaration && parent.receiverTypeReference == this
+        }
+
+    private val KtTypeReference.isTypeArgumentOfOuterKtTypeReference: Boolean
+        get() {
+            val typeProjection = parent as? KtTypeProjection
+            val typeArgumentList = typeProjection?.parent as? KtTypeArgumentList
+            val userType = typeArgumentList?.parent as? KtUserType
+
+            return userType?.parent is KtTypeReference
+        }
 
     private fun computeKeywordApplications(prefixText: String, keyword: KtKeywordToken): Sequence<String> = when (keyword) {
         SUSPEND_KEYWORD -> sequenceOf("suspend () -> Unit>", "suspend X")

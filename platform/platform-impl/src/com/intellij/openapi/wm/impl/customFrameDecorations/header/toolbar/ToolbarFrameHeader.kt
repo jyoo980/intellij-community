@@ -10,10 +10,16 @@ import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.IdeActions
 import com.intellij.openapi.ui.FixedSizeButton
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.IconLoader
+import com.intellij.openapi.util.ScalableIcon
 import com.intellij.openapi.wm.impl.IdeMenuBar
+import com.intellij.openapi.wm.impl.ToolbarHolder
 import com.intellij.openapi.wm.impl.customFrameDecorations.header.AbstractMenuFrameHeader
 import com.intellij.openapi.wm.impl.headertoolbar.MainToolbar
+import com.intellij.openapi.wm.impl.headertoolbar.isToolbarInHeader
+import com.intellij.ui.IconManager
 import com.intellij.ui.awt.RelativeRectangle
+import com.intellij.ui.components.panels.NonOpaquePanel
 import com.intellij.util.ui.GridBag
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.JBUI.CurrentTheme.CustomFrameDecorations
@@ -25,55 +31,74 @@ import javax.swing.JFrame
 import javax.swing.JPanel
 import kotlin.math.roundToInt
 
-private const val MENU_PANEL = "menu"
-private const val TOOLBAR_PANEL = "toolbar"
+private enum class ShowMode {
+  MENU, TOOLBAR
+}
 
-internal class ToolbarFrameHeader(frame: JFrame, ideMenu: IdeMenuBar) : AbstractMenuFrameHeader(frame), UISettingsListener {
+internal class ToolbarFrameHeader(frame: JFrame, ideMenu: IdeMenuBar) : AbstractMenuFrameHeader(frame), UISettingsListener, ToolbarHolder {
 
   private val myMenuBar = ideMenu
   private val myMenuButton = createMenuButton()
-  private val myToolbar = createToolbar()
+  private var myToolbar : MainToolbar? = null
+  private val myToolbarPlaceholder = NonOpaquePanel()
   private val myHeaderContent = createHeaderContent()
+
+  private var myMode = ShowMode.MENU
 
   init {
     layout = GridBagLayout()
     val gb = GridBag().anchor(WEST)
 
-    updateHeaderContent(UISettings.instance)
+    updateLayout(UISettings.instance)
 
     productIcon.border = JBUI.Borders.empty(V, H)
     add(productIcon, gb.nextLine().next().anchor(WEST))
     add(myHeaderContent, gb.next().fillCell().anchor(CENTER).weightx(1.0).weighty(1.0))
     add(buttonPanes.getView(), gb.next().anchor(EAST))
 
-    setCustomFrameTopBorder({ myState != Frame.MAXIMIZED_VERT && myState != Frame.MAXIMIZED_BOTH }, {true})
+    setCustomFrameTopBorder({ false }, {true})
+  }
 
-    myHeaderContent.border = JBUI.Borders.empty()
+  override fun updateToolbar() {
+    removeToolbar()
+    myToolbar = createToolbar()
+    myToolbarPlaceholder.add(myToolbar)
+    myToolbarPlaceholder.revalidate()
+  }
+
+  override fun removeToolbar() {
+    myToolbarPlaceholder.removeAll()
+    myToolbarPlaceholder.revalidate()
   }
 
   override fun updateMenuActions(forceRebuild: Boolean) {} //todo remove
 
   override fun uiSettingsChanged(uiSettings: UISettings) {
-    updateHeaderContent(uiSettings)
+    updateLayout(uiSettings)
+    when (myMode) {
+      ShowMode.TOOLBAR -> updateToolbar()
+      ShowMode.MENU -> removeToolbar()
+    }
   }
 
   override fun getHitTestSpots(): List<RelativeRectangle> {
     val res = super.getHitTestSpots().toMutableList()
 
-    if (myMenuBar.isVisible) {
-      res.add(getElementRect(myMenuBar) { rect ->
-        val state = frame.extendedState
-        if (state != Frame.MAXIMIZED_VERT && state != Frame.MAXIMIZED_BOTH) {
-          val topGap = (rect.height / 3).toFloat().roundToInt()
-          rect.y += topGap
-          rect.height -= topGap
-        }
-      })
-    }
-
-    if (myMenuButton.isVisible) res.add(getElementRect(myMenuButton))
-    if (myToolbar.isVisible) {
-      for (cmp in myToolbar.components) res.add(getElementRect(cmp))
+    when (myMode) {
+      ShowMode.MENU -> {
+        res.add(getElementRect(myMenuBar) { rect ->
+          val state = frame.extendedState
+          if (state != Frame.MAXIMIZED_VERT && state != Frame.MAXIMIZED_BOTH) {
+            val topGap = (rect.height / 3).toFloat().roundToInt()
+            rect.y += topGap
+            rect.height -= topGap
+          }
+        })
+      }
+      ShowMode.TOOLBAR -> {
+        res.add(getElementRect(myMenuButton))
+        myToolbar?.components?.filter { it.isVisible }?.forEach { res.add(getElementRect(it)) }
+      }
     }
 
     return res
@@ -86,35 +111,41 @@ internal class ToolbarFrameHeader(frame: JFrame, ideMenu: IdeMenuBar) : Abstract
   }
 
   fun createHeaderContent(): JPanel {
-    val res = JPanel(CardLayout())
+    val res = NonOpaquePanel(CardLayout())
+    res.border = JBUI.Borders.emptyLeft(15)
 
-    val menuPnl = JPanel(GridBagLayout()).apply {
+    val menuPnl = NonOpaquePanel(GridBagLayout()).apply {
       val gb = GridBag().anchor(WEST).nextLine()
       add(myMenuBar, gb.next())
       add(Box.createHorizontalGlue(), gb.next().weightx(1.0).fillCell())
     }
-    val toolbarPnl = JPanel(GridBagLayout()).apply {
+    val toolbarPnl = NonOpaquePanel(GridBagLayout()).apply {
       val gb = GridBag().anchor(WEST).nextLine()
       add(myMenuButton, gb.next().insetRight(25))
-      add(myToolbar, gb.next().weightx(1.0).fillCellHorizontally())
+      add(myToolbarPlaceholder, gb.next().weightx(1.0).fillCellHorizontally())
     }
 
-    res.add(MENU_PANEL, menuPnl)
-    res.add(TOOLBAR_PANEL, toolbarPnl)
+    res.add(ShowMode.MENU.name, menuPnl)
+    res.add(ShowMode.TOOLBAR.name, toolbarPnl)
 
     return res
   }
 
-  private fun updateHeaderContent(settings: UISettings) {
+  private fun updateLayout(settings: UISettings) {
+    myMode = if (isToolbarInHeader(settings)) ShowMode.TOOLBAR else ShowMode.MENU
     val layout = myHeaderContent.layout as CardLayout
-    layout.show(myHeaderContent, if (settings.showMainToolbar) MENU_PANEL else TOOLBAR_PANEL)
+    layout.show(myHeaderContent, myMode.name)
   }
 
-  private fun createToolbar(): JPanel = MainToolbar()
+  private fun createToolbar(): MainToolbar = MainToolbar().apply { isOpaque = false }
 
   private fun createMenuButton(): AbstractButton {
     val button = FixedSizeButton(20)
-    button.icon = AllIcons.General.Add
+    val icon = IconManager.getInstance().getIcon("expui/general/windowsMenu.svg", AllIcons::class.java)
+    if (icon is ScalableIcon) {
+      button.icon = IconLoader.loadCustomVersionOrScale(icon, 20f) //todo change to precompiled icon later
+    }
+    button.isOpaque = false
     button.addActionListener {
       DataManager.getInstance().dataContextFromFocusAsync.blockingGet(200)?.let { context ->
         val mainMenu = ActionManager.getInstance().getAction(IdeActions.GROUP_MAIN_MENU) as ActionGroup

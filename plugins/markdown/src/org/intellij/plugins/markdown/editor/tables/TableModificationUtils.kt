@@ -5,6 +5,7 @@ import com.intellij.openapi.editor.Caret
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.util.TextRange
+import com.intellij.psi.util.siblings
 import com.intellij.refactoring.suggested.endOffset
 import com.intellij.refactoring.suggested.startOffset
 import com.intellij.util.containers.ContainerUtil
@@ -13,9 +14,9 @@ import org.intellij.plugins.markdown.editor.tables.TableUtils.getColumnAlignment
 import org.intellij.plugins.markdown.editor.tables.TableUtils.getColumnCells
 import org.intellij.plugins.markdown.editor.tables.TableUtils.separatorRow
 import org.intellij.plugins.markdown.lang.MarkdownTokenTypes
-import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableCellImpl
-import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableImpl
-import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableRowImpl
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableCell
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTable
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableRow
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableSeparatorRow
 import org.intellij.plugins.markdown.util.hasType
 import org.jetbrains.annotations.ApiStatus
@@ -26,10 +27,10 @@ internal object TableModificationUtils {
    * Modifies column with [columnIndex], calling [transformCell] on each cell and
    * [transformSeparator] on corresponding separator cell.
    */
-  fun MarkdownTableImpl.modifyColumn(
+  fun MarkdownTable.modifyColumn(
     columnIndex: Int,
     transformSeparator: (TextRange) -> Unit,
-    transformCell: (MarkdownTableCellImpl) -> Unit
+    transformCell: (MarkdownTableCell) -> Unit
   ): Boolean {
     val separatorRange = separatorRow?.getCellRange(columnIndex) ?: return false
     val headerCell = headerRow?.getCell(columnIndex) ?: return false
@@ -58,13 +59,13 @@ internal object TableModificationUtils {
     return cellText.all { it =='-' || it == ':' }
   }
 
-  fun MarkdownTableCellImpl.hasCorrectPadding(): Boolean {
+  fun MarkdownTableCell.hasCorrectPadding(): Boolean {
     val cellText = text
     return text.length >= TableProps.MIN_CELL_WIDTH && cellText.startsWith(" ") && cellText.endsWith(" ")
   }
 
   @Suppress("MemberVisibilityCanBePrivate")
-  fun MarkdownTableImpl.isColumnCorrectlyFormatted(columnIndex: Int, checkAlignment: Boolean = true): Boolean {
+  fun MarkdownTable.isColumnCorrectlyFormatted(columnIndex: Int, checkAlignment: Boolean = true): Boolean {
     val cells = getColumnCells(columnIndex, withHeader = true)
     if (cells.isEmpty()) {
       return true
@@ -83,17 +84,17 @@ internal object TableModificationUtils {
     }
   }
 
-  fun MarkdownTableImpl.isCorrectlyFormatted(checkAlignment: Boolean = true): Boolean {
+  fun MarkdownTable.isCorrectlyFormatted(checkAlignment: Boolean = true): Boolean {
     return (0 until columnsCount).all { isColumnCorrectlyFormatted(it, checkAlignment) }
   }
 
-  fun MarkdownTableCellImpl.hasValidAlignment(): Boolean {
+  fun MarkdownTableCell.hasValidAlignment(): Boolean {
     val table = parentTable ?: return true
     val columnAlignment = table.getColumnAlignment(columnIndex)
     return hasValidAlignment(columnAlignment)
   }
 
-  fun MarkdownTableCellImpl.hasValidAlignment(expected: MarkdownTableSeparatorRow.CellAlignment): Boolean {
+  fun MarkdownTableCell.hasValidAlignment(expected: MarkdownTableSeparatorRow.CellAlignment): Boolean {
     val content = text
     if (content.length < TableProps.MIN_CELL_WIDTH) {
       return false
@@ -122,7 +123,7 @@ internal object TableModificationUtils {
     }
   }
 
-  fun MarkdownTableImpl.validateColumnAlignment(columnIndex: Int): Boolean {
+  fun MarkdownTable.validateColumnAlignment(columnIndex: Int): Boolean {
     val expected = separatorRow!!.getCellAlignment(columnIndex)
     if (expected == MarkdownTableSeparatorRow.CellAlignment.NONE) {
       return true
@@ -165,7 +166,7 @@ internal object TableModificationUtils {
     }
   }
 
-  fun MarkdownTableCellImpl.getContentWithoutWhitespaces(document: Document): String {
+  fun MarkdownTableCell.getContentWithoutWhitespaces(document: Document): String {
     val range = textRange
     val content = document.charsSequence.substring(range.startOffset, range.endOffset)
     return content.trim(' ')
@@ -179,7 +180,7 @@ internal object TableModificationUtils {
     document.replaceString(cellRange.startOffset, cellRange.endOffset, replacement)
   }
 
-  fun MarkdownTableCellImpl.updateAlignment(document: Document, alignment: MarkdownTableSeparatorRow.CellAlignment) {
+  fun MarkdownTableCell.updateAlignment(document: Document, alignment: MarkdownTableSeparatorRow.CellAlignment) {
     if (alignment == MarkdownTableSeparatorRow.CellAlignment.NONE) {
       return
     }
@@ -191,7 +192,7 @@ internal object TableModificationUtils {
     document.replaceString(cellRange.startOffset, cellRange.endOffset, replacement)
   }
 
-  fun MarkdownTableImpl.updateColumnAlignment(document: Document, columnIndex: Int, alignment: MarkdownTableSeparatorRow.CellAlignment) {
+  fun MarkdownTable.updateColumnAlignment(document: Document, columnIndex: Int, alignment: MarkdownTableSeparatorRow.CellAlignment) {
     modifyColumn(
       columnIndex,
       transformSeparator = { separatorRow?.updateAlignment(document, columnIndex, alignment) },
@@ -199,12 +200,12 @@ internal object TableModificationUtils {
     )
   }
 
-  fun MarkdownTableImpl.updateColumnAlignment(document: Document, columnIndex: Int) {
+  fun MarkdownTable.updateColumnAlignment(document: Document, columnIndex: Int) {
     val alignment = separatorRow?.getCellAlignment(columnIndex) ?: return
     updateColumnAlignment(document, columnIndex, alignment)
   }
 
-  fun MarkdownTableImpl.buildEmptyRow(builder: StringBuilder = StringBuilder()): StringBuilder {
+  fun MarkdownTable.buildEmptyRow(builder: StringBuilder = StringBuilder()): StringBuilder {
     val header = checkNotNull(headerRow)
     builder.append(TableProps.SEPARATOR_CHAR)
     for (cell in header.cells) {
@@ -216,33 +217,59 @@ internal object TableModificationUtils {
     return builder
   }
 
-  fun MarkdownTableImpl.selectColumn(editor: Editor, columnIndex: Int, withHeader: Boolean = false, withSeparator: Boolean = false) {
+  fun MarkdownTable.selectColumn(
+    editor: Editor,
+    columnIndex: Int,
+    withHeader: Boolean = false,
+    withSeparator: Boolean = false,
+    withBorders: Boolean = false
+  ) {
     val cells = getColumnCells(columnIndex, withHeader)
     val caretModel = editor.caretModel
     caretModel.removeSecondaryCarets()
     caretModel.currentCaret.apply {
-      val textRange = cells.first().textRange
+      val textRange = obtainCellSelectionRange(cells.first(), withBorders)
       moveToOffset(textRange.startOffset)
       setSelectionFromRange(textRange)
     }
     if (withSeparator) {
-      separatorRow?.getCellRange(columnIndex)?.let { textRange ->
+      val range = when {
+        withBorders -> separatorRow?.getCellRangeWithPipes(columnIndex)
+        else -> separatorRow?.getCellRange(columnIndex)
+      }
+      range?.let { textRange ->
         val caret = caretModel.addCaret(editor.offsetToVisualPosition(textRange.startOffset))
         caret?.setSelectionFromRange(textRange)
       }
     }
     for (cell in cells.asSequence().drop(1)) {
-      val textRange = cell.textRange
+      val textRange = obtainCellSelectionRange(cell, withBorders)
       val caret = caretModel.addCaret(editor.offsetToVisualPosition(textRange.startOffset))
       caret?.setSelectionFromRange(textRange)
     }
+  }
+
+  private fun obtainCellSelectionRange(cell: MarkdownTableCell, withBorders: Boolean): TextRange {
+    val range = cell.textRange
+    if (!withBorders) {
+      return range
+    }
+    val leftPipe = cell.siblings(forward = false, withSelf = false)
+      .takeWhile { it !is MarkdownTableCell }
+      .find { it.hasType(MarkdownTokenTypes.TABLE_SEPARATOR) }
+    val rightPipe = cell.siblings(forward = true, withSelf = false)
+      .takeWhile { it !is MarkdownTableCell }
+      .find { it.hasType(MarkdownTokenTypes.TABLE_SEPARATOR) }
+    val left = leftPipe?.startOffset ?: range.startOffset
+    val right = rightPipe?.endOffset ?: range.endOffset
+    return TextRange(left, right)
   }
 
   private fun Caret.setSelectionFromRange(textRange: TextRange) {
     setSelection(textRange.startOffset, textRange.endOffset)
   }
 
-  fun MarkdownTableImpl.insertColumn(
+  fun MarkdownTable.insertColumn(
     document: Document,
     columnIndex: Int,
     after: Boolean = true,
@@ -299,7 +326,7 @@ internal object TableModificationUtils {
     return builder.toString()
   }
 
-  fun MarkdownTableRowImpl.hasCorrectBorders(): Boolean {
+  fun MarkdownTableRow.hasCorrectBorders(): Boolean {
     return firstChild?.hasType(MarkdownTokenTypes.TABLE_SEPARATOR) == true &&
            lastChild?.hasType(MarkdownTokenTypes.TABLE_SEPARATOR) == true
   }
@@ -308,7 +335,7 @@ internal object TableModificationUtils {
     return text.let { it.startsWith(TableProps.SEPARATOR_CHAR) && it.endsWith(TableProps.SEPARATOR_CHAR) }
   }
 
-  fun MarkdownTableImpl.hasCorrectBorders(): Boolean {
+  fun MarkdownTable.hasCorrectBorders(): Boolean {
     val rows = getRows(true)
     return rows.all { it.hasCorrectBorders() } && separatorRow?.hasCorrectBorders() == true
   }
@@ -346,7 +373,7 @@ internal object TableModificationUtils {
   /**
    * Removes column based on PSI.
    */
-  fun MarkdownTableImpl.removeColumn(columnIndex: Int) {
+  fun MarkdownTable.removeColumn(columnIndex: Int) {
     val cells = getColumnCells(columnIndex, withHeader = true)
     for (cell in cells.asReversed()) {
       val parent = cell.parent

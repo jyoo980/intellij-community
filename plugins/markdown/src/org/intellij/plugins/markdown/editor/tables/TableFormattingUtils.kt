@@ -3,6 +3,7 @@ package org.intellij.plugins.markdown.editor.tables
 
 import com.intellij.openapi.editor.Caret
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.refactoring.suggested.startOffset
@@ -12,8 +13,8 @@ import org.intellij.plugins.markdown.editor.tables.TableUtils.getColumnAlignment
 import org.intellij.plugins.markdown.editor.tables.TableUtils.getColumnCells
 import org.intellij.plugins.markdown.editor.tables.TableUtils.isHeaderRow
 import org.intellij.plugins.markdown.editor.tables.TableUtils.separatorRow
-import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableCellImpl
-import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableImpl
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableCell
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTable
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableSeparatorRow
 import java.lang.Integer.max
 
@@ -45,12 +46,12 @@ internal object TableFormattingUtils {
     return CellContentState(contentWithReplacements, caretsInside)
   }
 
-  private fun MarkdownTableCellImpl.buildCellState(document: Document, carets: Iterable<Caret>): CellContentState {
+  private fun MarkdownTableCell.buildCellState(document: Document, carets: Iterable<Caret>): CellContentState {
     return buildCellState(textRange, document, carets)
   }
 
   private fun calculateContentsMaxWidth(
-    cells: Collection<MarkdownTableCellImpl>,
+    cells: Collection<MarkdownTableCell>,
     cellsContentsWithCarets: Iterable<CellContentState>,
     separatorCellRange: TextRange?,
     trimToMaxContent: Boolean
@@ -76,7 +77,7 @@ internal object TableFormattingUtils {
 
   private fun processCell(
     document: Document,
-    cell: MarkdownTableCellImpl,
+    cell: MarkdownTableCell,
     state: CellContentState,
     maxCellWidth: Int,
     alignment: MarkdownTableSeparatorRow.CellAlignment,
@@ -122,7 +123,7 @@ internal object TableFormattingUtils {
     }
   }
 
-  fun MarkdownTableImpl.reformatColumnOnChange(
+  fun MarkdownTable.reformatColumnOnChange(
     document: Document,
     carets: Iterable<Caret>,
     columnIndex: Int,
@@ -148,7 +149,7 @@ internal object TableFormattingUtils {
     processCell(document, cells.last(), cellsStates.last(), maxCellWidth, alignment, preventExpand)
   }
 
-  fun reformatAllColumns(table: MarkdownTableImpl, document: Document, trimToMaxContent: Boolean = true, preventExpand: Boolean = false) {
+  fun reformatAllColumns(table: MarkdownTable, document: Document, trimToMaxContent: Boolean = true, preventExpand: Boolean = false) {
     val columnsIndices = table.columnsIndices
     val tableOffset = table.startOffset
     for (columnIndex in columnsIndices) {
@@ -159,5 +160,10 @@ internal object TableFormattingUtils {
       }
       currentTable.reformatColumnOnChange(document, emptyList(), columnIndex, trimToMaxContent, preventExpand)
     }
+  }
+
+  fun MarkdownTable.isSoftWrapping(editor: Editor): Boolean {
+    val range = textRange
+    return editor.softWrapModel.getSoftWrapsForRange(range.startOffset, range.endOffset).isNotEmpty()
   }
 }

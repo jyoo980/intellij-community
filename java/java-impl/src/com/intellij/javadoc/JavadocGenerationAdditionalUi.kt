@@ -57,7 +57,7 @@ class JavadocGenerationAdditionalUi {
       }
         .layout(RowLayout.INDEPENDENT)
       row(JavaBundle.message("javadoc.generate.scope.row")) {
-        myScopeCombo = comboBox(arrayOf(PsiKeyword.PUBLIC, PsiKeyword.PROTECTED, PsiKeyword.PACKAGE, PsiKeyword.PRIVATE))
+        myScopeCombo = comboBox(listOf(PsiKeyword.PUBLIC, PsiKeyword.PROTECTED, PsiKeyword.PACKAGE, PsiKeyword.PRIVATE))
           .component
       }
         .layout(RowLayout.INDEPENDENT)
@@ -118,7 +118,7 @@ class JavadocGenerationAdditionalUi {
       }
       row(JavaBundle.message("javadoc.generate.heap.size")) {
         myHeapSizeField = intTextField(IntRange(0, Int.MAX_VALUE), 128)
-          .horizontalAlign(HorizontalAlign.FILL)
+          .gap(RightGap.SMALL)
           .component
         @Suppress("DialogTitleCapitalization")
         label(JavaBundle.message("megabytes.unit"))

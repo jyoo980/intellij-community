@@ -1,8 +1,8 @@
 package com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.panels.management
 
-import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBSplitter
 import com.intellij.ui.components.JBScrollPane
@@ -11,7 +11,9 @@ import com.jetbrains.packagesearch.intellij.plugin.PackageSearchBundle
 import com.jetbrains.packagesearch.intellij.plugin.actions.ShowSettingsAction
 import com.jetbrains.packagesearch.intellij.plugin.actions.TogglePackageDetailsAction
 import com.jetbrains.packagesearch.intellij.plugin.configuration.PackageSearchGeneralConfiguration
+import com.jetbrains.packagesearch.intellij.plugin.fus.PackageSearchEventsLogger
 import com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.models.TargetModules
+import com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.models.UiPackageModel
 import com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.models.operations.PackageSearchOperationFactory
 import com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.panels.PackageSearchPanelBase
 import com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.panels.management.modules.ModulesTree
@@ -19,26 +21,24 @@ import com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.panels.manageme
 import com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.panels.management.packages.PackagesListPanel
 import com.jetbrains.packagesearch.intellij.plugin.ui.toolwindow.panels.management.packages.computeModuleTreeModel
 import com.jetbrains.packagesearch.intellij.plugin.ui.util.scaled
-import com.jetbrains.packagesearch.intellij.plugin.util.AppUI
 import com.jetbrains.packagesearch.intellij.plugin.util.lifecycleScope
-import com.jetbrains.packagesearch.intellij.plugin.util.logDebug
 import com.jetbrains.packagesearch.intellij.plugin.util.packageSearchProjectService
 import com.jetbrains.packagesearch.intellij.plugin.util.uiStateSource
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.newCoroutineContext
 import java.awt.Dimension
 import javax.swing.BorderFactory
@@ -47,7 +47,7 @@ import javax.swing.JScrollPane
 @Suppress("MagicNumber") // Swing dimension constants
 internal class PackageManagementPanel(
     val project: Project,
-) : PackageSearchPanelBase(PackageSearchBundle.message("packagesearch.ui.toolwindow.tab.packages.title")), CoroutineScope, Disposable {
+) : PackageSearchPanelBase(PackageSearchBundle.message("packagesearch.ui.toolwindow.tab.packages.title")), CoroutineScope by project.lifecycleScope {
 
     override val coroutineContext =
         project.lifecycleScope.newCoroutineContext(SupervisorJob() + CoroutineName("PackageManagementPanel"))
@@ -57,7 +57,7 @@ internal class PackageManagementPanel(
 
     private val targetModulesChannel = Channel<TargetModules>(onBufferOverflow = BufferOverflow.DROP_OLDEST)
     private val targetModulesFlow = targetModulesChannel.consumeAsFlow()
-        .shareIn(this, SharingStarted.Eagerly, 0)
+        .stateIn(this, SharingStarted.Eagerly, TargetModules.None)
 
     private val modulesTree = ModulesTree { targetModulesChannel.trySend(it) }
     private val modulesScrollPanel = JBScrollPane(
@@ -89,7 +89,7 @@ internal class PackageManagementPanel(
         dataProvider = project.packageSearchProjectService.dataProvider
     )
 
-    private val packageDetailsPanel = PackageDetailsPanel(operationExecutor)
+    private val packageDetailsPanel = PackageDetailsPanel(project, operationExecutor)
 
     private val packagesSplitter = JBSplitter(
         "PackageSearch.PackageManagementPanel.DetailsSplitter",
@@ -128,7 +128,12 @@ internal class PackageManagementPanel(
             .map { computeModuleTreeModel(it) }
             .flowOn(Dispatchers.Default)
             .onEach { modulesTree.display(it) }
-            .flowOn(Dispatchers.AppUI)
+            .flowOn(Dispatchers.EDT)
+            .launchIn(this)
+
+        packagesListPanel.selectedPackageStateFlow
+            .filterNotNull()
+            .onEach { PackageSearchEventsLogger.logPackageSelected(it is UiPackageModel.Installed) }
             .launchIn(this)
 
         combine(
@@ -147,7 +152,7 @@ internal class PackageManagementPanel(
             )
         }.flowOn(Dispatchers.Default)
             .onEach { packageDetailsPanel.display(it) }
-            .flowOn(Dispatchers.AppUI)
+            .flowOn(Dispatchers.EDT)
             .launchIn(this)
     }
 
@@ -177,9 +182,4 @@ internal class PackageManagementPanel(
     )
 
     override fun buildTitleActions(): Array<AnAction> = arrayOf(togglePackageDetailsAction)
-
-    override fun dispose() {
-        logDebug("PackageManagementPanel#dispose()") { "Disposing PackageManagementPanel..." }
-        cancel("Disposing PackageManagementPanel")
-    }
 }

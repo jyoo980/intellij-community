@@ -461,12 +461,11 @@
         <separator/>
         <action id="SaveAll" class="com.intellij.ide.actions.SaveAllAction" icon="AllIcons.Actions.MenuSaveall"/>
         <action id="Synchronize" class="com.intellij.ide.actions.SynchronizeAction" icon="AllIcons.Actions.Refresh"/>
+        <group id="CacheRecovery" class="com.intellij.ide.actions.cache.CacheRecoveryActionGroup"/>
+
         <action id="InvalidateCaches" class="com.intellij.ide.actions.InvalidateCachesAction">
           <synonym text="Restart"/>
         </action>
-        <action id="RestartIde" class="com.intellij.ide.actions.RestartIdeAction"/>
-
-        <group id="CacheRecovery" class="com.intellij.ide.actions.cache.CacheRecoveryActionGroup"/>
         <separator/>
         <group id="ExportImportGroup" popup="true">
           <action id="ImportSettings" class="com.intellij.configurationStore.ImportSettingsAction"/>
@@ -531,6 +530,7 @@
           <action id="ToggleFindInSelection" class="com.intellij.find.editorHeaderActions.ToggleSelectionOnlyAction"/>
           <separator/>
           <action id="FindWordAtCaret" class="com.intellij.openapi.editor.actions.FindWordAtCaretAction"/>
+          <action id="FindPrevWordAtCaret" class="com.intellij.openapi.editor.actions.FindPrevWordAtCaretAction"/>
           <separator/>
           <action id="FindInPath" class="com.intellij.find.actions.FindInPathAction">
             <synonym key="action.FindInPath.synonym1"/>
@@ -788,20 +788,6 @@
           <action id="ConfigureEditorTabs" class="com.intellij.ide.actions.ConfigureEditorTabsAction"/>
         </group>
 
-        <group id="EditorTabsEntryPoint" popup="true" icon="AllIcons.Actions.More">
-          <reference id="RecentFiles"/>
-          <reference id="RecentLocations"/>
-          <separator/>
-          <reference id="CloseAllEditors"/>
-          <reference id="ReopenClosedTab"/>
-          <separator/>
-          <reference id="Unsplit"/>
-          <reference id="UnsplitAll"/>
-          <reference id="ChangeSplitOrientation"/>
-          <separator/>
-          <reference id="ConfigureEditorTabs"/>
-        </group>
-
         <group id="Notifications" popup="true">
           <action class="com.intellij.ui.CloseFirstNotificationAction" id="CloseFirstNotification"/>
           <action class="com.intellij.ui.CloseAllNotificationsAction" id="CloseAllNotifications"/>
@@ -867,6 +853,22 @@
       <group id="OtherMenu" class="com.intellij.ide.actions.NonEmptyActionGroup"/>
     </group>
 
+    <group id="EditorTabsEntryPoint" popup="true" icon="AllIcons.Actions.More">
+      <reference id="RecentFiles"/>
+      <reference id="RecentLocations"/>
+      <separator/>
+      <reference id="CloseAllEditors"/>
+      <reference id="ReopenClosedTab"/>
+      <separator/>
+      <reference id="Unsplit"/>
+      <reference id="UnsplitAll"/>
+      <reference id="ChangeSplitOrientation"/>
+      <separator/>
+      <reference id="ConfigureEditorTabs"/>
+    </group>
+
+    <action id="RestartIde" class="com.intellij.ide.actions.RestartIdeAction"/>
+
     <group id="MainToolBar">
       <reference ref="OpenFile"/>
       <reference ref="SaveAll"/>
@@ -888,7 +890,6 @@
 
     <group id="NavBarVcsGroup"/>
     <group id="SegmentedVcsActionsBarGroup"/>
-
     <group id="EditorPopupMenu">
       <reference ref="$Cut"/>
       <reference ref="$Copy"/>
@@ -1051,7 +1052,7 @@
               icon="AllIcons.Actions.ProjectDirectory"/>
       <separator/>
       <action id="FileChooser.NewFile" class="com.intellij.openapi.fileChooser.actions.NewFileAction"
-              icon="AllIcons.Actions.New"/>
+              icon="AllIcons.Actions.AddFile"/>
       <action id="FileChooser.NewFolder" class="com.intellij.openapi.fileChooser.actions.NewFolderAction"
               icon="AllIcons.Actions.NewFolder"/>
       <action id="FileChooser.Delete" class="com.intellij.openapi.fileChooser.actions.FileDeleteAction"
@@ -1060,7 +1061,7 @@
       <action id="FileChooser.Refresh" class="com.intellij.openapi.fileChooser.actions.RefreshFileChooserAction"
               icon="AllIcons.Actions.Refresh" use-shortcut-of="Synchronize"/>
       <separator/>
-      <action id="FileChooser.ShowHiddens" class="com.intellij.openapi.fileChooser.actions.ShowHiddensAction"
+      <action id="FileChooser.ShowHidden" class="com.intellij.openapi.fileChooser.actions.ShowHiddensAction"
               icon="AllIcons.Actions.ShowHiddens"/>
 
       <add-to-group group-id="Other.KeymapGroup"/>
@@ -1103,7 +1104,6 @@
       <separator/>
       <action internal="true" id="ReloadProjectAction" class="com.intellij.internal.ReloadProjectAction"/>
       <group id="Internal.Trust" popup="true">
-        <action id="UnsureProject" internal="true" class="com.intellij.internal.UnsureTrustAction"/>
         <action id="TrustProject" internal="true" class="com.intellij.internal.YesTrustAction"/>
         <action id="UntrustProject" internal="true" class="com.intellij.internal.NoTrustAction"/>
       </group>
@@ -1134,7 +1134,7 @@
           <action id="LabelSizeDemoAction" internal="true" class="com.intellij.internal.LabelSizeDemoAction" />
           <action id="JEditorPaneDemoAction" internal="true" class="com.intellij.internal.ui.JEditorPaneDemoAction"/>
           <action id="WebBrowser" class="com.intellij.internal.jcef.JBCefBrowserDemo"/>
-          <action id="UiDslTestAction" internal="true" class="com.intellij.internal.ui.UiDslTestAction"/>
+          <action id="UiDslTestAction" internal="true" class="com.intellij.internal.ui.uiDslTestAction.UiDslTestAction"/>
           <action id="JBTabsDemo" internal="true" class="com.intellij.internal.JBTabsDemoAction"/>
           <action id="JTabbedPaneDemo" internal="true" class="com.intellij.internal.JTabbedPaneDemoAction"/>
         </group>
@@ -1175,6 +1175,7 @@
         <action id="UIDefaults" internal="true" class="com.intellij.ui.ShowUIDefaultsAction">
           <abbreviation value="laf"/>
         </action>
+        <action id="EnableMetalRendering" internal="true" class="com.intellij.ui.EnableMetalRenderingAction"/>
         <action id="RulerGuide" internal="true" class="com.intellij.internal.rulerguide.RulerGuideAction"/>
         <separator/>
         <action id="AddTestProcessAction" internal="true" class="com.intellij.openapi.wm.impl.status.AddTestProcessAction"/>
@@ -1391,6 +1392,7 @@
               internal="true"/>
       <action id="SilentHeapDumpSnapshot" class="com.intellij.diagnostic.hprof.action.InternalNonuserInvokedHeapDumpSnapshotAction"
               internal="true"/>
+      <action id="AnalyzeHeapDumpSnapshot" class="com.intellij.diagnostic.hprof.action.AnalyzeReportAction" internal="true"/>
       <add-to-group group-id="Internal"/>
     </group>
 
@@ -1469,5 +1471,7 @@
       <reference id="ChangeKeymap"/>
       <reference id="ChangeView"/>
     </group>
+
+    <action id="CheckSuggestedPlugins" class="com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.CheckSuggestedPluginsAction"/>
   </actions>
 </idea-plugin>

@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.diff.tools.combined
 
 import com.intellij.diff.*
@@ -7,11 +7,16 @@ import com.intellij.diff.impl.CacheDiffRequestProcessor
 import com.intellij.diff.impl.DiffRequestProcessor
 import com.intellij.diff.impl.DiffSettingsHolder
 import com.intellij.diff.impl.DiffSettingsHolder.DiffSettings.Companion.getSettings
+import com.intellij.diff.impl.ui.DifferencesLabel
 import com.intellij.diff.requests.DiffRequest
 import com.intellij.diff.tools.fragmented.UnifiedDiffTool
+import com.intellij.diff.tools.util.PrevNextDifferenceIterable
 import com.intellij.diff.util.DiffUserDataKeys
+import com.intellij.diff.util.DiffUserDataKeysEx
 import com.intellij.diff.util.DiffUserDataKeysEx.ScrollToPolicy
 import com.intellij.diff.util.DiffUtil
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 
@@ -23,7 +28,7 @@ interface CombinedDiffRequestProducer : DiffRequestProducer {
 
 open class CombinedDiffRequestProcessor(project: Project?,
                                         private val requestProducer: CombinedDiffRequestProducer) :
-  CacheDiffRequestProcessor.Simple(project) {
+  CacheDiffRequestProcessor.Simple(project, DiffUtil.createUserDataHolder(DiffUserDataKeysEx.DIFF_NEW_TOOLBAR, true)) {
 
   override fun getCurrentRequestProvider(): DiffRequestProducer = requestProducer
 
@@ -31,9 +36,51 @@ open class CombinedDiffRequestProcessor(project: Project?,
   protected val request get() = activeRequest as? CombinedDiffRequest
 
   //
+  // Global, shortcuts only navigation actions
+  //
+
+  private val openInEditorAction = object : MyOpenInEditorAction() {
+    override fun update(e: AnActionEvent) {
+      super.update(e)
+      e.presentation.isVisible = false
+    }
+  }
+
+  private val prevFileAction = object : MyPrevChangeAction() {
+    override fun update(e: AnActionEvent) {
+      super.update(e)
+      e.presentation.isVisible = false
+    }
+  }
+
+  private val nextFileAction = object : MyNextChangeAction() {
+    override fun update(e: AnActionEvent) {
+      super.update(e)
+      e.presentation.isVisible = false
+    }
+  }
+
+  private val prevDifferenceAction = object : MyPrevDifferenceAction() {
+    override fun getDifferenceIterable(e: AnActionEvent): PrevNextDifferenceIterable? {
+      return viewer?.scrollSupport?.currentPrevNextIterable ?: super.getDifferenceIterable(e)
+    }
+  }
+
+  private val nextDifferenceAction = object : MyNextDifferenceAction() {
+    override fun getDifferenceIterable(e: AnActionEvent): PrevNextDifferenceIterable? {
+      return viewer?.scrollSupport?.currentPrevNextIterable ?: super.getDifferenceIterable(e)
+    }
+  }
+
+  //
   // Navigation
   //
 
+  override fun getNavigationActions(): List<AnAction> {
+    val goToChangeAction = createGoToChangeAction()
+    return listOfNotNull(prevDifferenceAction, nextDifferenceAction, MyDifferencesLabel(goToChangeAction),
+                         openInEditorAction, prevFileAction, nextFileAction)
+  }
   final override fun isNavigationEnabled(): Boolean = requestProducer.getFilesSize() > 0
 
   final override fun hasNextChange(fromUpdate: Boolean): Boolean {
@@ -78,6 +125,22 @@ open class CombinedDiffRequestProcessor(project: Project?,
         goToBlock()
         combinedDiffViewer.selectDiffBlock(ScrollPolicy.DIFF_BLOCK)
       }
+    }
+  }
+
+  private inner class MyDifferencesLabel(goToChangeAction: AnAction?) :
+    DifferencesLabel(goToChangeAction, myToolbarWrapper.targetComponent) {
+
+    override fun getFileCount(): Int = requestProducer.getFilesSize()
+    override fun getTotalDifferences(): Int = calculateTotalDifferences()
+
+    private fun calculateTotalDifferences(): Int {
+      val combinedViewer = viewer ?: return 0
+
+      return combinedViewer.diffBlocks
+        .asSequence()
+        .map { it.content.viewer}
+        .sumOf { (it as? DifferencesCounter)?.getTotalDifferences() ?: 1 }
     }
   }
 

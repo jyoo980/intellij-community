@@ -22,7 +22,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.TestActionEvent;
 import com.intellij.util.FileContentUtil;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.idea.maven.MavenMultiVersionImportingTestCase;
+import com.intellij.maven.testFramework.MavenMultiVersionImportingTestCase;
 import org.jetbrains.idea.maven.importing.MavenRootModelAdapter;
 import org.jetbrains.idea.maven.model.MavenExplicitProfiles;
 import org.jetbrains.idea.maven.project.*;
@@ -53,6 +53,17 @@ public class MavenProjectsManagerTest extends MavenMultiVersionImportingTestCase
 
     // shouldn't throw
     assertNull(myProjectsManager.findProject(myProjectPom));
+  }
+
+  @Test
+  public void testShouldReturnNotNullForProcessedFiles() {
+    createProjectPom("<groupId>test</groupId>" +
+                     "<artifactId>project</artifactId>" +
+                     "<version>1</version>");
+    importProject();
+
+    // shouldn't throw
+    assertNotNull(myProjectsManager.findProject(myProjectPom));
   }
 
   @Test 
@@ -679,8 +690,8 @@ public class MavenProjectsManagerTest extends MavenMultiVersionImportingTestCase
 
     importProjects(p1, p2);
     myProjectsManager.setExplicitProfiles(new MavenExplicitProfiles(Arrays.asList("one", "two")));
-    myProjectsManager.setIgnoredFilesPaths(Arrays.asList(p1.getPath()));
-    myProjectsManager.setIgnoredFilesPatterns(Arrays.asList("*.xxx"));
+    setIgnoredFilesPathForNextImport(Arrays.asList(p1.getPath()));
+    setIgnoredPathPatternsForNextImport(Arrays.asList("*.xxx"));
 
     state = myProjectsManager.getState();
     assertUnorderedPathsAreEqual(state.originalFiles, Arrays.asList(p1.getPath(), p2.getPath()));
@@ -1203,8 +1214,13 @@ public class MavenProjectsManagerTest extends MavenMultiVersionImportingTestCase
 
   @Override
   protected void doImportProjects(List<VirtualFile> files, boolean failOnReadingError, String... profiles) {
-    super.doImportProjects(files, failOnReadingError, profiles);
-    resolveDependenciesAndImport(); // wait of full import completion
+    if(isNewImportingProcess){
+      importViaNewFlow(files, failOnReadingError, Collections.emptyList(), profiles);
+    } else {
+      super.doImportProjects(files, failOnReadingError, profiles);
+      resolveDependenciesAndImport(); // wait of full import completion
+    }
+
   }
 
   private boolean hasProjectsToBeImported() {

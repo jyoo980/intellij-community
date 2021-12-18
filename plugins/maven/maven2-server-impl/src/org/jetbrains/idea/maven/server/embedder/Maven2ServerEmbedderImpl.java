@@ -96,10 +96,14 @@ public final class Maven2ServerEmbedderImpl extends MavenRemoteObject implements
     settings.setWorkOffline(facadeSettings.isOffline());
     settings.setUsePluginRegistry(false);
 
-    settings.setMavenHome(facadeSettings.getMavenHome());
-    settings.setUserSettingsFile(facadeSettings.getUserSettingsFile());
-    settings.setGlobalSettingsFile(facadeSettings.getGlobalSettingsFile());
-    settings.setLocalRepository(facadeSettings.getLocalRepository());
+    String mavenHomePath = facadeSettings.getMavenHomePath();
+    if (mavenHomePath != null) {
+      settings.setMavenHomePath(facadeSettings.getMavenHomePath());
+    }
+
+    settings.setUserSettingsPath(facadeSettings.getUserSettingsPath());
+    settings.setGlobalSettingsPath(facadeSettings.getGlobalSettingsPath());
+    settings.setLocalRepositoryPath(facadeSettings.getLocalRepositoryPath());
 
     if (commandLineOptions.contains("-U") || commandLineOptions.contains("--update-snapshots")) {
       settings.setSnapshotUpdatePolicy(MavenEmbedderSettings.UpdatePolicy.ALWAYS_UPDATE);
@@ -762,6 +766,37 @@ public final class Maven2ServerEmbedderImpl extends MavenRemoteObject implements
     catch (Exception e) {
       throw rethrowException(e);
     }
+  }
+
+  @Override
+  public Set<MavenRemoteRepository> resolveRepositories(@NotNull Collection<MavenRemoteRepository> repositories,
+                                                         MavenToken token) throws RemoteException {
+    return Collections.emptySet();
+  }
+
+  @Override
+  public Collection<MavenArchetype> getArchetypes(MavenToken token) throws RemoteException {
+    return Collections.emptyList();
+  }
+
+  @Override
+  public Collection<MavenArchetype> getLocalArchetypes(MavenToken token, @NotNull String path) throws RemoteException {
+    return Collections.emptyList();
+  }
+
+  @Override
+  public Collection<MavenArchetype> getRemoteArchetypes(MavenToken token, @NotNull String url) throws RemoteException {
+    return Collections.emptyList();
+  }
+
+  @Nullable
+  @Override
+  public Map<String, String> resolveAndGetArchetypeDescriptor(@NotNull String groupId,
+                                                              @NotNull String artifactId,
+                                                              @NotNull String version,
+                                                              @NotNull List<MavenRemoteRepository> repositories,
+                                                              @Nullable String url, MavenToken token) throws RemoteException {
+    return Collections.emptyMap();
   }
 
   private interface Executor<T> {

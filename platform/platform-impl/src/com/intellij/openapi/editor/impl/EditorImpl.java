@@ -14,7 +14,10 @@ import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.actionSystem.impl.PopupMenuPreloader;
-import com.intellij.openapi.application.*;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.TransactionGuard;
+import com.intellij.openapi.application.TransactionGuardImpl;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.command.UndoConfirmationPolicy;
 import com.intellij.openapi.diagnostic.Logger;
@@ -64,7 +67,6 @@ import com.intellij.psi.codeStyle.CodeStyleSettingsChangeEvent;
 import com.intellij.psi.codeStyle.CodeStyleSettingsListener;
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.ui.*;
-import com.intellij.ui.components.GradientViewport;
 import com.intellij.ui.components.JBLayeredPane;
 import com.intellij.ui.components.JBScrollBar;
 import com.intellij.ui.components.JBScrollPane;
@@ -76,8 +78,8 @@ import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.*;
 import com.intellij.util.concurrency.EdtExecutorService;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.lang.JavaVersion;
 import com.intellij.util.ui.*;
-import com.intellij.util.ui.update.Activatable;
 import com.intellij.util.ui.update.UiNotifyConnector;
 import org.intellij.lang.annotations.JdkConstants;
 import org.intellij.lang.annotations.MagicConstant;
@@ -306,6 +308,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
   // Set when the selection (normal or block one) initiated by mouse drag becomes noticeable (at least one character is selected).
   // Reset on mouse press event.
   private boolean myCurrentDragIsSubstantial;
+  private boolean myForcePushHappened;
 
   private CaretImpl myPrimaryCaret;
 
@@ -513,9 +516,11 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
 
     updateCaretCursor();
 
-    if (!ApplicationManager.getApplication().isHeadlessEnvironment() &&
-        SystemInfo.isMac && SystemInfo.isJetBrainsJvm) {
-      MacGestureSupportInstaller.installOnComponent(getComponent());
+    if (!ApplicationManager.getApplication().isHeadlessEnvironment()
+        && SystemInfo.isMac && SystemInfo.isJetBrainsJvm
+        //todo[kb] JBR-4038
+        && !JavaVersion.current().isAtLeast(17)) {
+      MacGestureSupportInstaller.installOnComponent(getComponent(), e -> myForcePushHappened = true);
     }
 
     myScrollingModel.addVisibleAreaListener(this::moveCaretIntoViewIfCoveredByToolWindowBelow);
@@ -958,6 +963,8 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
     mySelectionModel.reinitSettings();
     ourCaretBlinkingCommand.setBlinkCaret(mySettings.isBlinkCaret());
     ourCaretBlinkingCommand.setBlinkPeriod(mySettings.getCaretBlinkPeriod());
+    ourCaretBlinkingCommand.start();
+
     myView.reinitSettings();
     myFoldingModel.refreshSettings();
     myFoldingModel.rebuild();
@@ -1059,11 +1066,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
 
     myGutterComponent.setOpaque(true);
 
-    if (ExperimentalUI.isNewEditorTabs()) {
-      myScrollPane.setViewport(new GradientViewport(myEditorComponent, JBUI.insets(10), true));
-    } else {
-      myScrollPane.setViewportView(myEditorComponent);
-    }
+    myScrollPane.setViewportView(myEditorComponent);
     //myScrollPane.setBorder(null);
     myScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
     myScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
@@ -1100,7 +1103,8 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
       };
 
       layeredPane.add(myScrollPane, JLayeredPane.DEFAULT_LAYER);
-      layeredPane.add(new EditorFloatingToolbar(this), JLayeredPane.POPUP_LAYER);
+      UiNotifyConnector.doWhenFirstShown(
+        myPanel, () -> layeredPane.add(new EditorFloatingToolbar(this), JLayeredPane.POPUP_LAYER), getDisposable());
       myPanel.add(layeredPane);
     }
     else {
@@ -1148,13 +1152,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
 
     myEditorComponent.addFocusListener(this);
 
-    UiNotifyConnector connector = new UiNotifyConnector(myEditorComponent, new Activatable() {
-      @Override
-      public void showNotify() {
-        myGutterComponent.updateSizeOnShowNotify();
-      }
-    });
-    Disposer.register(getDisposable(), connector);
+    UiNotifyConnector.doWhenFirstShown(myEditorComponent, myGutterComponent::updateSizeOnShowNotify, getDisposable());
 
     try {
       final DropTarget dropTarget = myEditorComponent.getDropTarget();
@@ -1466,6 +1464,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
   public void setCaretActive() {
     synchronized (ourCaretBlinkingCommand) {
       ourCaretBlinkingCommand.myEditor = this;
+      ourCaretBlinkingCommand.start();
     }
   }
 
@@ -2771,13 +2770,14 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
       if (mySchedulerHandle != null) {
         mySchedulerHandle.cancel(false);
       }
-      mySchedulerHandle = EdtExecutorService.getScheduledExecutorInstance().scheduleWithFixedDelay(this, mySleepTime, mySleepTime,
-                                                                                                   TimeUnit.MILLISECONDS);
+      if (myEditor != null) {
+        mySchedulerHandle = EdtExecutorService.getScheduledExecutorInstance().scheduleWithFixedDelay(this, mySleepTime, mySleepTime,
+                                                                                                     TimeUnit.MILLISECONDS);
+      }
     }
 
     private void setBlinkPeriod(int blinkPeriod) {
       mySleepTime = Math.max(blinkPeriod, 10);
-      start();
     }
 
     private void setBlinkCaret(boolean value) {
@@ -2786,8 +2786,9 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
 
     @Override
     public void run() {
-      if (myEditor != null) {
-        CaretCursor activeCursor = myEditor.myCaretCursor;
+      EditorImpl editor = myEditor;
+      if (editor != null) {
+        CaretCursor activeCursor = editor.myCaretCursor;
 
         long time = System.currentTimeMillis();
         time -= activeCursor.myStartTime;
@@ -2923,7 +2924,6 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
     private CaretRectangle[] myLocations;
     private boolean myEnabled;
 
-    @SuppressWarnings("FieldAccessedSynchronizedAndUnsynchronized")
     private boolean myIsShown;
     private long myStartTime;
 
@@ -2948,6 +2948,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
         ourCaretBlinkingCommand.setBlinkCaret(blink);
         ourCaretBlinkingCommand.setBlinkPeriod(blinkPeriod);
         myIsShown = true;
+        ourCaretBlinkingCommand.start();
       }
     }
 
@@ -3860,6 +3861,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
       myCaretStateBeforeLastPress = isToggleCaretEvent(e) ? myCaretModel.getCaretsAndSelections() : Collections.emptyList();
       myCurrentDragIsSubstantial = false;
       myDragStarted = false;
+      myForcePushHappened = false;
       clearDnDContext();
 
       myMousePressedEvent = e;
@@ -4380,8 +4382,10 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
         EVENT_LOG.debug(e.toString());
       }
       if (myDraggedRange != null || myGutterComponent.myDnDInProgress) {
-        // on Mac we receive events even if drag-n-drop is in progress
-        return;
+        return; // on Mac we receive events even if drag-n-drop is in progress
+      }
+      if (myForcePushHappened) {
+        return; // avoid selection creation on accidental mouse move/drag after force push
       }
       validateMousePointer(e, null);
       EditorMouseEvent event = createEditorMouseEvent(e);

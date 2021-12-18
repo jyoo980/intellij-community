@@ -23,7 +23,7 @@ import com.intellij.ui.dsl.gridLayout.VerticalAlign
 import com.intellij.util.text.DateFormatUtil
 import com.intellij.util.ui.JBUI
 import javax.swing.JComponent
-import javax.swing.JLabel
+import javax.swing.JEditorPane
 
 private const val TOOLBOX_URL =
   "https://www.jetbrains.com/toolbox-app/?utm_source=product&utm_medium=link&utm_campaign=toolbox_app_in_IDE_updatewindow&utm_content=we_recommend"
@@ -32,7 +32,7 @@ class UpdateSettingsConfigurable @JvmOverloads constructor (private val checkNow
   BoundConfigurable(IdeBundle.message("updates.settings.title"), "preferences.updates") {
 
   private lateinit var myLink: JComponent
-  private lateinit var myLastCheckedLabel: JLabel
+  private lateinit var myLastCheckedLabel: JEditorPane
 
   override fun createPanel(): DialogPanel {
     val settings = UpdateSettings.getInstance()
@@ -122,9 +122,7 @@ class UpdateSettingsConfigurable @JvmOverloads constructor (private val checkNow
                 .customize(customGaps = Gaps(right = JBUI.scale(10)))
               panel {
                 row {
-                  label(IdeBundle.message("updates.settings.recommend.toolbox.first.part") + " ")
-                    .bold()
-                  browserLink(ExternalUpdateManager.TOOLBOX.toolName, TOOLBOX_URL)
+                  text(IdeBundle.message("updates.settings.recommend.toolbox", TOOLBOX_URL, ExternalUpdateManager.TOOLBOX.toolName))
                     .bold()
                 }
                 row {

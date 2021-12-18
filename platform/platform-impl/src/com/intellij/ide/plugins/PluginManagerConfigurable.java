@@ -105,13 +105,18 @@ public final class PluginManagerConfigurable
   private PluginsGroupComponentWithProgress myMarketplacePanel;
   private PluginsGroupComponent myInstalledPanel;
 
+  private final PluginsGroup myBundledUpdateGroup =
+    new PluginsGroup(IdeBundle.message("plugins.configurable.bundled.updates"), PluginsGroupType.BUNDLED_UPDATE);
+
   private Runnable myMarketplaceRunnable;
 
   private SearchResultPanel myMarketplaceSearchPanel;
   private SearchResultPanel myInstalledSearchPanel;
 
   private final LinkLabel<Object> myUpdateAll = new LinkLabel<>(IdeBundle.message("plugin.manager.update.all"), null);
+  private final LinkLabel<Object> myUpdateAllBundled = new LinkLabel<>(IdeBundle.message("plugin.manager.update.all"), null);
   private final JLabel myUpdateCounter = new CountComponent();
+  private final JLabel myUpdateCounterBundled = new CountComponent();
   private final CountIcon myCountIcon = new CountIcon();
 
   private final MyPluginModel myPluginModel;
@@ -182,7 +187,9 @@ public final class PluginManagerConfigurable
     });
 
     myUpdateAll.setVisible(false);
+    myUpdateAllBundled.setVisible(false);
     myUpdateCounter.setVisible(false);
+    myUpdateCounterBundled.setVisible(false);
 
     myTabHeaderComponent.addTab(IdeBundle.message("plugin.manager.tab.marketplace"), null);
     myTabHeaderComponent.addTab(IdeBundle.message("plugin.manager.tab.installed"), myCountIcon);
@@ -192,11 +199,20 @@ public final class PluginManagerConfigurable
       String text = Integer.toString(count);
       boolean visible = count > 0;
 
+      String tooltip = PluginUpdatesService.getUpdatesTooltip();
+      myTabHeaderComponent.setTabTooltip(INSTALLED_TAB, tooltip);
+
       myUpdateAll.setEnabled(true);
-      myUpdateAll.setVisible(visible);
+      myUpdateAllBundled.setEnabled(true);
+      myUpdateAll.setVisible(visible && myBundledUpdateGroup.ui == null);
+      myUpdateAllBundled.setVisible(visible);
 
       myUpdateCounter.setText(text);
-      myUpdateCounter.setVisible(visible);
+      myUpdateCounter.setToolTipText(tooltip);
+      myUpdateCounterBundled.setText(text);
+      myUpdateCounterBundled.setToolTipText(tooltip);
+      myUpdateCounter.setVisible(visible && myBundledUpdateGroup.ui == null);
+      myUpdateCounterBundled.setVisible(visible);
 
       myCountIcon.setText(text);
       myTabHeaderComponent.update();
@@ -814,21 +830,27 @@ public final class PluginManagerConfigurable
           List<IdeaPluginDescriptorImpl> nonBundledPlugins = visiblePlugins.get(Boolean.FALSE);
           downloaded.descriptors.addAll(nonBundledPlugins);
 
-          if (!downloaded.descriptors.isEmpty()) {
-            myUpdateAll.setListener(new LinkListener<>() {
-              @Override
-              public void linkSelected(LinkLabel<Object> aSource, Object aLinkData) {
-                aSource.setEnabled(false);
+          LinkListener<Object> updateAllListener = new LinkListener<>() {
+            @Override
+            public void linkSelected(LinkLabel<Object> aSource, Object aLinkData) {
+              myUpdateAll.setEnabled(false);
+              myUpdateAllBundled.setEnabled(false);
 
-                for (UIPluginGroup group : getInstalledGroups()) {
-                  for (ListPluginComponent plugin : group.plugins) {
-                    plugin.updatePlugin();
-                  }
+              for (UIPluginGroup group : getInstalledGroups()) {
+                if (group.excluded) {
+                  continue;
+                }
+                for (ListPluginComponent plugin : group.plugins) {
+                  plugin.updatePlugin();
                 }
               }
-            }, null);
-            downloaded.addRightAction(myUpdateAll);
-            downloaded.addRightAction(myUpdateCounter);
+            }
+          };
+          myUpdateAll.setListener(updateAllListener, null);
+          downloaded.addRightAction(myUpdateAll);
+          downloaded.addRightAction(myUpdateCounter);
+
+          if (!downloaded.descriptors.isEmpty()) {
             downloaded.sortByName();
 
             long enabledNonBundledCount = nonBundledPlugins.stream()
@@ -845,15 +867,21 @@ public final class PluginManagerConfigurable
           String defaultCategory = IdeBundle.message("plugins.configurable.other.bundled");
           visiblePlugins.get(Boolean.TRUE)
             .stream()
-            .collect(Collectors.groupingBy(descriptor -> StringUtil.notNullize(descriptor.getCategory())))
+            .collect(Collectors.groupingBy(descriptor -> StringUtil.defaultIfEmpty(descriptor.getCategory(), defaultCategory)))
             .entrySet()
             .stream()
-            .map(entry -> new ComparablePluginsGroup(entry.getKey(), defaultCategory, entry.getValue()))
-            .sorted()
+            .map(entry -> new ComparablePluginsGroup(entry.getKey(), entry.getValue()))
+            .sorted((o1, o2) -> defaultCategory.equals(o1.title) ? 1 :
+                                defaultCategory.equals(o2.title) ? -1 :
+                                o1.compareTo(o2))
             .forEachOrdered(group -> {
               myInstalledPanel.addGroup(group);
               myPluginModel.addEnabledGroup(group);
             });
+
+          myUpdateAllBundled.setListener(updateAllListener, null);
+          myBundledUpdateGroup.addRightAction(myUpdateAllBundled);
+          myBundledUpdateGroup.addRightAction(myUpdateCounterBundled);
 
           myPluginUpdatesService.calculateUpdates(updates -> {
             if (ContainerUtil.isEmpty(updates)) {
@@ -864,6 +892,7 @@ public final class PluginManagerConfigurable
               applyUpdates(myInstalledPanel, updates);
               applyUpdates(myInstalledSearchPanel.getPanel(), updates);
             }
+            applyBundledUpdates(updates);
             selectionListener.accept(myInstalledPanel);
           });
         }
@@ -1135,16 +1164,12 @@ public final class PluginManagerConfigurable
   private final class ComparablePluginsGroup extends PluginsGroup
     implements Comparable<ComparablePluginsGroup> {
 
-    private final @NotNull @Nls String myDefaultCategory;
     private boolean myIsEnable = false;
 
     private ComparablePluginsGroup(@NotNull @NlsSafe String category,
-                                   @NotNull @Nls String defaultCategory,
                                    @NotNull List<? extends IdeaPluginDescriptor> descriptors) {
-      super(StringUtil.defaultIfEmpty(category, defaultCategory),
-            PluginsGroupType.INSTALLED);
+      super(category, PluginsGroupType.INSTALLED);
 
-      myDefaultCategory = defaultCategory;
       this.descriptors.addAll(descriptors);
       sortByName();
 
@@ -1157,9 +1182,7 @@ public final class PluginManagerConfigurable
 
     @Override
     public int compareTo(@NotNull ComparablePluginsGroup other) {
-      return myDefaultCategory.equals(title) ? 1 :
-             myDefaultCategory.equals(other.title) ? -1 :
-             StringUtil.compare(title, other.title, true);
+      return StringUtil.compare(title, other.title, true);
     }
 
     @Override
@@ -1204,6 +1227,93 @@ public final class PluginManagerConfigurable
         }
       }
     }
+  }
+
+  private void applyBundledUpdates(@Nullable Collection<? extends IdeaPluginDescriptor> updates) {
+    if (ContainerUtil.isEmpty(updates)) {
+      if (myBundledUpdateGroup.ui != null) {
+        myInstalledPanel.removeGroup(myBundledUpdateGroup);
+        myInstalledPanel.doLayout();
+      }
+    }
+    else if (myBundledUpdateGroup.ui == null) {
+      for (IdeaPluginDescriptor descriptor : updates) {
+        for (UIPluginGroup group : myInstalledPanel.getGroups()) {
+          ListPluginComponent component = group.findComponent(descriptor);
+          if (component != null && component.getPluginDescriptor().isBundled()) {
+            myBundledUpdateGroup.descriptors.add(component.getPluginDescriptor());
+            break;
+          }
+        }
+      }
+      if (!myBundledUpdateGroup.descriptors.isEmpty()) {
+        myInstalledPanel.addGroup(myBundledUpdateGroup, 0);
+        myBundledUpdateGroup.ui.excluded = true;
+
+        for (IdeaPluginDescriptor descriptor : updates) {
+          ListPluginComponent component = myBundledUpdateGroup.ui.findComponent(descriptor);
+          if (component != null) {
+            component.setUpdateDescriptor(descriptor);
+          }
+        }
+
+        myInstalledPanel.doLayout();
+      }
+    }
+    else {
+      List<ListPluginComponent> toDelete = new ArrayList<>();
+
+      for (ListPluginComponent plugin : myBundledUpdateGroup.ui.plugins) {
+        boolean exist = false;
+        for (IdeaPluginDescriptor update : updates) {
+          if (plugin.getPluginDescriptor().getPluginId().equals(update.getPluginId())) {
+            exist = true;
+            break;
+          }
+        }
+        if (!exist) {
+          toDelete.add(plugin);
+        }
+      }
+
+      for (ListPluginComponent component : toDelete) {
+        myInstalledPanel.removeFromGroup(myBundledUpdateGroup, component.getPluginDescriptor());
+      }
+
+      for (IdeaPluginDescriptor update : updates) {
+        ListPluginComponent exist = myBundledUpdateGroup.ui.findComponent(update);
+        if (exist != null) {
+          continue;
+        }
+        for (UIPluginGroup group : myInstalledPanel.getGroups()) {
+          if (group == myBundledUpdateGroup.ui) {
+            continue;
+          }
+          ListPluginComponent component = group.findComponent(update);
+          if (component != null && component.getPluginDescriptor().isBundled()) {
+            myInstalledPanel.addToGroup(myBundledUpdateGroup, component.getPluginDescriptor());
+            break;
+          }
+        }
+      }
+
+      if (myBundledUpdateGroup.descriptors.isEmpty()) {
+        myInstalledPanel.removeGroup(myBundledUpdateGroup);
+      }
+      else {
+        for (IdeaPluginDescriptor descriptor : updates) {
+          ListPluginComponent component = myBundledUpdateGroup.ui.findComponent(descriptor);
+          if (component != null) {
+            component.setUpdateDescriptor(descriptor);
+          }
+        }
+      }
+
+      myInstalledPanel.doLayout();
+    }
+
+    myUpdateAll.setVisible(myUpdateAll.isVisible() && myBundledUpdateGroup.ui == null);
+    myUpdateCounter.setVisible(myUpdateCounter.isVisible() && myBundledUpdateGroup.ui == null);
   }
 
   public static void registerCopyProvider(@NotNull PluginsGroupComponent component) {
@@ -1303,8 +1413,9 @@ public final class PluginManagerConfigurable
   @Messages.YesNoResult
   public static int showRestartDialog(@NotNull @NlsContexts.DialogTitle String title,
                                       @NotNull Function<? super String, @Nls String> message) {
-    String action =
-      IdeBundle.message(ApplicationManager.getApplication().isRestartCapable() ? "ide.restart.action" : "ide.shutdown.action");
+    String action = IdeBundle.message(ApplicationManager.getApplication().isRestartCapable() ?
+                                      "ide.restart.action" :
+                                      "ide.shutdown.action");
     return Messages.showYesNoDialog(message.apply(action),
                                     title,
                                     action,
@@ -1320,10 +1431,6 @@ public final class PluginManagerConfigurable
     shutdownOrRestartAppAfterInstall(title, PluginManagerConfigurable::getUpdatesDialogMessage);
   }
 
-  public static void shutdownOrRestartAppAfterInstall(@NotNull Function<? super String, @Nls String> message) {
-    shutdownOrRestartAppAfterInstall(getUpdatesDialogTitle(), message);
-  }
-
   static void shutdownOrRestartAppAfterInstall(@NotNull @NlsContexts.DialogTitle String title,
                                                @NotNull Function<? super String, @Nls String> message) {
     if (showRestartDialog(title, message) == Messages.YES) {
@@ -1331,12 +1438,12 @@ public final class PluginManagerConfigurable
     }
   }
 
-  static @Nls @NotNull String getUpdatesDialogTitle() {
+  static @NotNull @NlsContexts.DialogTitle String getUpdatesDialogTitle() {
     return IdeBundle.message("updates.dialog.title",
                              ApplicationNamesInfo.getInstance().getFullProductName());
   }
 
-  static @Nls @NotNull String getUpdatesDialogMessage(@Nls @NotNull String action) {
+  static @NotNull @NlsContexts.DialogMessage String getUpdatesDialogMessage(@Nls @NotNull String action) {
     return IdeBundle.message("ide.restart.required.message",
                              action,
                              ApplicationNamesInfo.getInstance().getFullProductName());
@@ -1670,8 +1777,11 @@ public final class PluginManagerConfigurable
     if (myPluginModel.apply(myCardPanel)) return;
 
     if (myPluginModel.createShutdownCallback) {
-      InstalledPluginsState.getInstance()
-        .setShutdownCallback(() -> ApplicationManager.getApplication().invokeLater(() -> shutdownOrRestartApp()));
+      InstalledPluginsState.getInstance().setShutdownCallback(() -> {
+        ApplicationManager.getApplication().invokeLater(() -> {
+          shutdownOrRestartApp();
+        });
+      });
     }
   }
 

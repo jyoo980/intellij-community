@@ -75,12 +75,7 @@ class BasicLookupElementFactory(
         qualifyNestedClasses: Boolean = false,
         includeClassTypeArguments: Boolean = true
     ): LookupElement {
-        val lookupObject = object : DeclarationLookupObjectImpl(null) {
-            override val psiElement: PsiElement
-                get() = psiClass
-
-            override fun getIcon(flags: Int) = psiClass.getIcon(flags)
-        }
+        val lookupObject = PsiClassLookupObject(psiClass)
         var element = LookupElementBuilder.create(lookupObject, psiClass.name!!).withInsertHandler(KotlinClassifierInsertHandler)
 
         val typeParams = psiClass.typeParameters
@@ -164,7 +159,7 @@ class BasicLookupElementFactory(
             is SyntheticJavaPropertyDescriptor -> {
                 lookupObject = object : DeclarationLookupObjectImpl(descriptor) {
                     override val psiElement by lazy { DescriptorToSourceUtilsIde.getAnyDeclaration(project, descriptor.getMethod) }
-                    override fun getIcon(flags: Int): Icon? = getIcon(this, descriptor, flags)
+                    override fun getIcon(flags: Int) = KotlinDescriptorIconProvider.getIcon(descriptor, null, flags)
                 }
                 descriptor.name.asString()
             }

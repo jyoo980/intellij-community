@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.jps.cmdline;
 
 import com.google.gson.Gson;
@@ -7,7 +7,8 @@ import com.intellij.compiler.notNullVerification.NotNullVerifyingInstrumenter;
 import com.intellij.openapi.application.ClassPathUtil;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.SystemInfoRt;
+import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.tracing.Tracer;
 import com.intellij.uiDesigner.compiler.AlienFormFileException;
 import com.intellij.uiDesigner.core.GridConstraints;
@@ -21,6 +22,7 @@ import io.netty.handler.codec.protobuf.ProtobufDecoder;
 import io.netty.resolver.AddressResolverGroup;
 import io.netty.util.NetUtil;
 import net.n3.nanoxml.IXMLBuilder;
+import org.apache.log4j.Appender;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.maven.aether.ArtifactRepositoryManager;
@@ -79,17 +81,12 @@ public final class ClasspathBootstrap {
   private static final String DEFAULT_MAVEN_REPOSITORY_PATH = ".m2/repository";
   private static final String PROTOBUF_JAVA6_VERSION = "3.5.1";
   private static final String PROTOBUF_JAVA6_JAR_NAME = "protobuf-java-" + PROTOBUF_JAVA6_VERSION + ".jar";
+  private static final String PROTOBUF_JAVA6_DISTRIBUTION_JAR_NAME = "protobuf-java6.jar";
 
   private static final String EXTERNAL_JAVAC_MODULE_NAME = "intellij.platform.jps.build.javac.rt.rpc";
   private static final String EXTERNAL_JAVAC_JAR_NAME = "jps-javac-rt-rpc.jar";
 
-  private static final Set<String> BANNED_JARS = new HashSet<>(2);
-
-  static {
-    String libPath = PathManager.getLibPath();
-    BANNED_JARS.add(libPath + "/3rd-party.jar");
-    BANNED_JARS.add(libPath + "/platform-impl.jar");
-  }
+  private static final String BANNED_JAR = PathManager.getLibPath() + "/app.jar";
 
   private static void addToClassPath(Class<?> aClass, Set<String> result) {
     String path = PathManager.getJarPathForClass(aClass);
@@ -97,7 +94,7 @@ public final class ClasspathBootstrap {
       return;
     }
 
-    if (result.add(path) && BANNED_JARS.contains(path)) {
+    if (result.add(path) && path.equals(BANNED_JAR)) {
       LOG.error("Due to " + aClass.getName() + " requirement, inappropriate " + PathUtilRt.getFileName(path) + " is added to build process classpath");
     }
   }
@@ -118,6 +115,7 @@ public final class ClasspathBootstrap {
 
     // intellij.platform.util
     addToClassPath(cp, ClassPathUtil.getUtilClasses());
+
     ClassPathUtil.addKotlinStdlib(cp);
     addToClassPath(cp, COMMON_REQUIRED_CLASSES);
 
@@ -157,13 +155,17 @@ public final class ClasspathBootstrap {
   }
 
   public static List<File> getExternalJavacProcessClasspath(String sdkHome, JavaCompilingTool compilingTool) {
+    // Important! All dependencies must be java 6 compatible (the oldest supported javac to be launched)
     final Set<File> cp = new LinkedHashSet<>();
     cp.add(getResourceFile(ExternalJavacProcess.class)); // self
     cp.add(getResourceFile(JavacReferenceCollector.class));  // jps-javac-extension library
-
-    // util
-    for (String path : ClassPathUtil.getUtilClassPath()) {
-      cp.add(new File(path));
+    cp.add(getResourceFile(Appender.class)); // log4j
+    cp.add(getResourceFile(SystemInfoRt.class)); // util_rt
+    try {
+      // trove
+      cp.add(getResourceFile(ClasspathBootstrap.class.getClassLoader().loadClass("gnu.trove.THashSet")));
+    }
+    catch (ClassNotFoundException ignore) {
     }
 
     for (Class<?> aClass : COMMON_REQUIRED_CLASSES) {
@@ -180,7 +182,7 @@ public final class ClasspathBootstrap {
     }
 
     try {
-      final String localJavaHome = FileUtil.toSystemIndependentName(SystemProperties.getJavaHome());
+      final String localJavaHome = FileUtilRt.toSystemIndependentName(SystemProperties.getJavaHome());
       // sdkHome is not the same as the sdk used to run this process
       final File candidate = new File(sdkHome, "lib/tools.jar");
       if (candidate.exists()) {
@@ -198,11 +200,11 @@ public final class ClasspathBootstrap {
         }
         final File resourceFile = getResourceFile(compilerClass);
         if (resourceFile != null) {
-          String localJarPath = FileUtil.toSystemIndependentName(resourceFile.getPath());
-          String relPath = FileUtil.getRelativePath(localJavaHome, localJarPath, '/');
+          String localJarPath = FileUtilRt.toSystemIndependentName(resourceFile.getPath());
+          String relPath = FileUtilRt.getRelativePath(localJavaHome, localJarPath, '/');
           if (relPath != null) {
             if (relPath.contains("..")) {
-              relPath = FileUtil.getRelativePath(FileUtil.toSystemIndependentName(new File(localJavaHome).getParent()), localJarPath, '/');
+              relPath = FileUtilRt.getRelativePath(FileUtilRt.toSystemIndependentName(new File(localJavaHome).getParent()), localJarPath, '/');
             }
             if (relPath != null) {
               final File targetFile = new File(sdkHome, relPath);
@@ -231,7 +233,7 @@ public final class ClasspathBootstrap {
       // running regular installation
       Path rtDirPath = rootPath.resolveSibling("rt");
       cp.add(rtDirPath.resolve(EXTERNAL_JAVAC_JAR_NAME).toFile());
-      cp.add(rtDirPath.resolve(PROTOBUF_JAVA6_JAR_NAME).toFile());
+      cp.add(rtDirPath.resolve(PROTOBUF_JAVA6_DISTRIBUTION_JAR_NAME).toFile());
     }
     else {
       // running from sources or on the build server
@@ -239,9 +241,10 @@ public final class ClasspathBootstrap {
 
       // take the library from the local maven repository
       File localRepositoryDir = getMavenLocalRepositoryDir();
-      File protobufJava6File = new File(FileUtil.join(localRepositoryDir.getAbsolutePath(),
-                               "com", "google", "protobuf", "protobuf-java", PROTOBUF_JAVA6_VERSION,
-                               PROTOBUF_JAVA6_JAR_NAME));
+      File protobufJava6File = new File(
+        String.join(File.separator, localRepositoryDir.getAbsolutePath(), "com", "google", "protobuf", "protobuf-java",
+                    PROTOBUF_JAVA6_VERSION, PROTOBUF_JAVA6_JAR_NAME)
+      );
       cp.add(protobufJava6File);
     }
   }

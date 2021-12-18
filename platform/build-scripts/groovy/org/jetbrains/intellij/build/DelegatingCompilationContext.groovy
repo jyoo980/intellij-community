@@ -1,8 +1,9 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.intellij.build
 
+import org.jetbrains.intellij.build.impl.BundledRuntime
+import org.jetbrains.intellij.build.impl.DependenciesProperties
 import org.jetbrains.intellij.build.impl.JpsCompilationData
-import org.jetbrains.intellij.build.kotlin.KotlinBinaries
 import org.jetbrains.jps.model.JpsModel
 import org.jetbrains.jps.model.JpsProject
 import org.jetbrains.jps.model.module.JpsModule
@@ -77,8 +78,8 @@ abstract class DelegatingCompilationContext implements CompilationContext {
   }
 
   @Override
-  String getModuleOutputPath(JpsModule module) {
-    return delegate.getModuleOutputPath(module)
+  Path getModuleOutputDir(JpsModule module) {
+    return delegate.getModuleOutputDir(module)
   }
 
   @Override
@@ -93,11 +94,22 @@ abstract class DelegatingCompilationContext implements CompilationContext {
 
   @Override
   void notifyArtifactBuilt(String artifactPath) {
+    //noinspection GrDeprecatedAPIUsage
     delegate.notifyArtifactBuilt(artifactPath)
   }
 
   @Override
   void notifyArtifactWasBuilt(Path artifactPath) {
     delegate.notifyArtifactWasBuilt(artifactPath)
+  }
+
+  @Override
+  DependenciesProperties getDependenciesProperties() {
+    return delegate.getDependenciesProperties()
+  }
+
+  @Override
+  BundledRuntime getBundledRuntime() {
+    return delegate.getBundledRuntime()
   }
 }

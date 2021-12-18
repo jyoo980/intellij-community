@@ -307,6 +307,11 @@ public class JBUI {
     }
 
     @NotNull
+    public static Border empty(@NotNull Insets insets) {
+      return empty(insets.top, insets.left, insets.bottom, insets.right);
+    }
+
+    @NotNull
     public static Border customLine(Color color, int top, int left, int bottom, int right) {
       return new CustomLineBorder(color, insets(top, left, bottom, right));
     }
@@ -646,7 +651,7 @@ public class JBUI {
                      ? active ? "EditorTabs.hoverSelectedBackground" : "EditorTabs.hoverSelectedInactiveBackground"
                      : active ? "EditorTabs.hoverBackground" : "EditorTabs.hoverInactiveBackground";
 
-        return JBColor.namedColor(key, Gray.TRANSPARENT);
+        return JBColor.namedColor(key, selected ? Gray.TRANSPARENT : DefaultTabs.hoverBackground());
       }
 
       @NotNull
@@ -683,7 +688,7 @@ public class JBUI {
 
     public static final class StatusBar {
       public static final Color BACKGROUND = JBColor.namedColor("StatusBar.background", JBColor.PanelBackground);
-
+      public static final Color BORDER_COLOR = JBColor.namedColor("StatusBar.borderColor", Gray.x91);
       /**
        * @deprecated Use {@link Widget#HOVER_BACKGROUND} instead.
        */
@@ -700,11 +705,11 @@ public class JBUI {
         Color PRESSED_BACKGROUND = JBColor.namedColor("StatusBar.Widget.pressedBackground", ActionButton.pressedBackground());
 
         static Border iconBorder() {
-          return new JBEmptyBorder(insets("StatusBar.widgetInsets", insets(0, 4)));
+          return new JBEmptyBorder(insets("StatusBar.Widget.widgetInsets", insets(0, 4)));
         }
 
         static Border border() {
-          return new JBEmptyBorder(insets("StatusBar.widgetInsets", insets(0, 6)));
+          return new JBEmptyBorder(insets("StatusBar.Widget.widgetInsets", insets(0, 6)));
         }
       }
 
@@ -719,6 +724,11 @@ public class JBUI {
 
         Color FLOATING_BACKGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.floatingBackground", List.BACKGROUND);
         Color FLOATING_FOREGROUND = JBColor.namedColor("StatusBar.Breadcrumbs.floatingForeground", UIUtil.getLabelForeground());
+        JBValue CHEVRON_INSET = new JBValue.UIInteger("StatusBar.Breadcrumbs.chevronInset", 0);
+
+        static Insets floatingBorderInsets() {
+          return insets("StatusBar.Breadcrumbs.floatingToolbarInsets", emptyInsets());
+        }
       }
     }
 
@@ -775,6 +785,14 @@ public class JBUI {
         return insets("ToolWindow.HeaderTab.insets", insets(0, 12, 0, 12));
       }
 
+      public static int headerTabUnderlineArc() {
+        return getInt("ToolWindow.HeaderTab.underlineArc", 4);
+      }
+
+      public static JBInsets headerTabLeftRightInsets() {
+        return insets("ToolWindow.HeaderTab.leftRightInsets", insets(0, 8, 0, 8));
+      }
+
       /**
        * @deprecated obsolete UI
        */
@@ -821,6 +839,18 @@ public class JBUI {
       @NotNull
       public static Insets headerInsets() {
         return insets("ToolWindow.Header.insets", insets(4, 8, 4, 8));
+      }
+
+      public static int headerHeight() {
+        return getInt("ToolWindow.Header.height", 42);
+      }
+
+      public static JBInsets headerLabelLeftRightInsets() {
+        return insets("ToolWindow.Header.labelLeftRightInsets", insets(0, 12, 0, 16));
+      }
+
+      public static JBInsets headerToolbarLeftRightInsets() {
+        return insets("ToolWindow.Header.toolbarLeftRightInsets", insets(0, 12, 0, 8));
       }
 
       /**
@@ -1162,6 +1192,59 @@ public class JBUI {
       @NotNull
       public static Color borderColor() {
         return JBColor.namedColor("ToolTip.borderColor", new JBColor(0xadadad, 0x636569));
+      }
+    }
+
+    public static final class GotItTooltip {
+      @NotNull
+      public static Color foreground(boolean useContrastColors) {
+        if (useContrastColors) {
+          return JBColor.namedColor("Tooltip.Learning.foreground", 0xF5F5F5);
+        } else {
+          return JBColor.namedColor("GotItTooltip.foreground", UIUtil.getToolTipForeground());
+        }
+      }
+
+      @NotNull
+      public static Color background(boolean useContrastColors) {
+        if (useContrastColors) {
+          return JBColor.namedColor("Tooltip.Learning.background");
+        } else {
+          return JBColor.namedColor("GotItTooltip.background", UIUtil.getToolTipBackground());
+        }
+      }
+
+      @NotNull
+      public static Color shortcutForeground(boolean useContrastColors) {
+        if (useContrastColors) {
+          return JBColor.namedColor("Tooltip.Learning.spanForeground", 0xF5F5F5);
+        } else {
+          return JBColor.namedColor("GotItTooltip.shortcutForeground", Tooltip.shortcutForeground());
+        }
+      }
+
+      @NotNull
+      public static Color linkForeground() {
+        return JBColor.namedColor("GotItTooltip.linkForeground", JBUI.CurrentTheme.Link.Foreground.ENABLED);
+      }
+
+      @NotNull
+      public static Color borderColor(boolean useContrastColors) {
+        if (useContrastColors) {
+          return JBColor.namedColor("Tooltip.Learning.background", 0x1071E8, 0x0E62CF);
+        } else {
+          return JBColor.namedColor("GotItTooltip.borderColor", JBUI.CurrentTheme.Tooltip.borderColor());
+        }
+      }
+
+      @NotNull
+      public static Color buttonBackgroundContrast() {
+        return JBColor.namedColor("Tooltip.Learning.spanBackground", 0x0D5CBD, 0x0250B0);
+      }
+
+      @NotNull
+      public static Color buttonForegroundContrast() {
+        return JBColor.namedColor("Tooltip.Learning.spanForeground", 0xF5F5F5);
       }
     }
 

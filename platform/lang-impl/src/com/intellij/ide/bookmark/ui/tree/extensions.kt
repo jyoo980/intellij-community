@@ -13,5 +13,5 @@ internal val AbstractTreeNode<*>.bookmarksManager
 internal val AbstractTreeNode<*>.parentRootNode: RootNode?
   get() = this as? RootNode ?: parent?.parentRootNode
 
-internal val AbstractTreeNode<*>.parentGroupNode: GroupNode?
-  get() = this as? GroupNode ?: parent?.parentGroupNode
+internal val AbstractTreeNode<*>.parentFolderNode: FolderNode?
+  get() = this as? FolderNode ?: parent?.parentFolderNode

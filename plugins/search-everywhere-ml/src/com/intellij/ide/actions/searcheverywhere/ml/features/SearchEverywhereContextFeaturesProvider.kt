@@ -5,6 +5,7 @@ import com.intellij.internal.statistic.local.ActionsGlobalSummaryManager
 import com.intellij.internal.statistic.local.ActionsLocalSummary
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
 
 internal class SearchEverywhereContextFeaturesProvider {
@@ -17,6 +18,8 @@ internal class SearchEverywhereContextFeaturesProvider {
     private const val GLOBAL_MIN_USAGE_COUNT_KEY = "globalMinUsage"
 
     private const val OPEN_FILE_TYPES_KEY = "openFileTypes"
+    private const val NUMBER_OF_OPEN_EDITORS_KEY = "numberOfOpenEditors"
+    private const val IS_SINGLE_MODULE_PROJECT = "isSingleModuleProject"
   }
 
   fun getContextFeatures(project: Project?): Map<String, Any> {
@@ -37,7 +40,10 @@ internal class SearchEverywhereContextFeaturesProvider {
 
       val fem = FileEditorManager.getInstance(it)
       data[OPEN_FILE_TYPES_KEY] = fem.openFiles.map { file -> file.fileType.name }.distinct()
+      data[NUMBER_OF_OPEN_EDITORS_KEY] = fem.allEditors.size
+      data[IS_SINGLE_MODULE_PROJECT] = ModuleManager.getInstance(it).modules.size == 1
     }
+
     return data
   }
 }

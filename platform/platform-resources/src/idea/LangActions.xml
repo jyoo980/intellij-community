@@ -162,8 +162,15 @@
       <action id="ToggleBookmarkWithMnemonic" class="com.intellij.ide.bookmark.actions.ChooseBookmarkTypeAction"/>
       <action id="DeleteMnemonicFromBookmark" class="com.intellij.ide.bookmark.actions.DeleteBookmarkTypeAction"/>
       <action id="ShowBookmarks" class="com.intellij.ide.bookmark.actions.ShowLineBookmarksAction"/>
-      <action id="GotoNextBookmark" class="com.intellij.ide.bookmark.actions.NextBookmarkAction"/>
-      <action id="GotoPreviousBookmark" class="com.intellij.ide.bookmark.actions.PreviousBookmarkAction"/>
+      <action id="ShowTypeBookmarks" class="com.intellij.ide.bookmark.actions.ShowTypeBookmarksAction"/>
+      <action id="GotoNextBookmark" icon="AllIcons.Actions.NextOccurence"
+              class="com.intellij.ide.bookmark.actions.NextBookmarkAction"/>
+      <action id="GotoNextBookmarkInEditor" icon="AllIcons.Actions.NextOccurence"
+              class="com.intellij.ide.bookmark.actions.NextBookmarkInEditorAction"/>
+      <action id="GotoPreviousBookmark" icon="AllIcons.Actions.PreviousOccurence"
+              class="com.intellij.ide.bookmark.actions.PreviousBookmarkAction"/>
+      <action id="GotoPreviousBookmarkInEditor" icon="AllIcons.Actions.PreviousOccurence"
+              class="com.intellij.ide.bookmark.actions.PreviousBookmarkInEditorAction"/>
 
       <group id="Bookmarks.Goto" popup="true">
         <action id="GotoBookmark0" class="com.intellij.ide.bookmark.actions.GotoBookmark0Action"/>
@@ -290,18 +297,6 @@
       <add-to-group group-id="Other.KeymapGroup"/>
     </group>
 
-    <group id="EditBookmarksGroup" popup="true">
-      <reference ref="ToggleBookmark"/>
-      <reference ref="DeleteMnemonicFromBookmark"/>
-      <reference ref="ToggleBookmarkWithMnemonic"/>
-      <reference ref="ShowBookmarks"/>
-      <reference ref="GotoNextBookmark"/>
-      <reference ref="GotoPreviousBookmark"/>
-      <separator/>
-
-      <add-to-group group-id="GoToMenu" anchor="last"/>
-    </group>
-
     <group id="popup@BookmarkContextMenu">
       <reference ref="AddAnotherBookmark"/>
       <reference ref="EditBookmark"/>
@@ -315,6 +310,19 @@
 
     <group id="popup@ExpandableBookmarkContextMenu" popup="true">
       <reference ref="popup@BookmarkContextMenu"/>
+    </group>
+
+    <group id="EditBookmarksGroup" popup="true">
+      <reference ref="popup@BookmarkContextMenu"/>
+      <separator/>
+      <reference ref="GotoPreviousBookmark"/>
+      <reference ref="GotoNextBookmark"/>
+      <separator/>
+      <reference ref="ShowBookmarks"/>
+      <reference ref="ShowTypeBookmarks"/>
+      <separator/>
+
+      <add-to-group group-id="EditMenu" anchor="after" relative-to-action="Macros"/>
     </group>
 
     <action id="GotoDeclarationOnly" class="com.intellij.codeInsight.navigation.actions.GotoDeclarationOnlyAction"/>
@@ -355,9 +363,7 @@
     <action id="Documentation.ToggleAutoUpdate"
             class="com.intellij.lang.documentation.ide.actions.ToggleAutoUpdateAction"/>
     <action id="Documentation.KeepTab"
-            class="com.intellij.lang.documentation.ide.actions.KeepTabAction"
-            icon="AllIcons.Toolbar.Pin"
-            use-shortcut-of="QuickJavaDoc">
+            class="com.intellij.lang.documentation.ide.actions.KeepTabAction">
       <add-to-group group-id="ToolWindowContextMenu" anchor="last"/>
     </action>
 
@@ -720,17 +726,19 @@
     <action id="TinySpacer" class="com.intellij.ide.navigationToolbar.experimental.TinySpacerAction"/>
 
     <group id="NewToolbarActions">
-      <group id="LeftToolbarSideGroup" class="com.intellij.ide.navigationToolbar.experimental.LeftToolbarGroup">
+      <group id="LeftToolbarSideGroup">
         <reference id="Back"/>
         <reference id="Forward"/>
         <reference id="BigSpacer"/>
         <action id="SegmentedVcsControlAction" class="com.intellij.execution.segmentedVcsWidget.SegmentedVcsControlAction"/>
         <reference id="SmallSpacer"/>
-        <action id="SegmentedSearchEverywhereAction" class="com.intellij.ide.navigationToolbar.experimental.SegmentedSearchEverywhereAction"/>
+        <action id="SearchEverywhereNewToolbarAction" class="com.intellij.ide.navigationToolbar.experimental.SearchEverywhereNewToolbarAction"/>
       </group>
-      <group id="CenterToolbarSideGroup" class="com.intellij.ide.navigationToolbar.experimental.CenterToolbarGroup">
+      <group id="CenterToolbarSideGroup">
+        <group id="CustomActions"/>
       </group>
-      <group id="RightToolbarSideGroup" class="com.intellij.ide.navigationToolbar.experimental.RightToolbarGroup">
+      <group id="RightToolbarSideGroup">
+        <reference id="TinySpacer"/>
         <reference id="BigSpacer"/>
         <reference id="RunToolbarWidgetAction"/>
         <reference id="SmallSpacer"/>
@@ -748,10 +756,6 @@
       </group>
     </group>
 
-    <group id="SegmentedSearchEverywhereGroup">
-      <action id="SearchEverywhereNewToolbarAction" class="com.intellij.ide.navigationToolbar.experimental.SearchEverywhereNewToolbarAction"/>
-    </group>
-
     <group id="ProjectViewPopupMenuRefactoringGroup" compact="true">
       <reference ref="RefactoringMenu"/>
     </group>
@@ -765,7 +769,6 @@
       <group id="MarkFileAs">
         <action id="OverrideFileTypeAction" class="com.intellij.openapi.file.exclude.OverrideFileTypeAction"/>
         <action id="ReverteOverrideFileTypeAction" class="com.intellij.openapi.file.exclude.ReverteOverrideFileTypeAction"/>
-        <add-to-group group-id="EditorPopupMenu3"/>
       </group>
     </group>
 
@@ -799,6 +802,7 @@
       <reference ref="ProjectViewPopupMenuRunGroup"/>
       <separator/>
       <reference ref="VersionControlsGroup"/>
+      <reference ref="CacheRecovery"/>
       <action id="SynchronizeCurrentFile" class="com.intellij.ide.actions.SynchronizeCurrentFileAction" icon="AllIcons.Actions.Refresh"/>
       <separator/>
       <action id="GoToLinkTarget" class="com.intellij.ide.actions.GoToLinkTargetAction"/>
@@ -1001,6 +1005,7 @@
     <group id="EditorTabPopupMenuEx" searchable="false">
       <separator/>
       <reference ref="AssociateWithFileType"/>
+      <reference ref="MarkFileAs"/>
       <reference ref="AddToFavorites"/>
       <reference ref="AddAllToFavorites"/>
       <separator/>
@@ -1165,6 +1170,7 @@
       <action id="XDebugger.ToggleSortValues" class="com.intellij.xdebugger.impl.ui.tree.actions.SortValuesToggleAction" icon="AllIcons.ObjectBrowser.Sorted"/>
       <action id="Debugger.MarkObject" class="com.intellij.xdebugger.impl.actions.MarkObjectAction" use-shortcut-of="ToggleBookmark"/>
       <action id="Debugger.FocusOnBreakpoint" class="com.intellij.xdebugger.impl.actions.FocusOnBreakpointAction"/>
+      <action id="Debugger.FocusOnFinish" class="com.intellij.xdebugger.impl.actions.FocusOnFinishAction"/>
       <action id="Debugger.ShowReferring" class="com.intellij.xdebugger.impl.ui.tree.actions.ShowReferringObjectsAction"/>
       <action id="Debugger.RemoveAllBreakpoints" class="com.intellij.xdebugger.impl.actions.RemoveAllBreakpointsAction"/>
       <action id="Debugger.RemoveAllBreakpointsInFile" class="com.intellij.xdebugger.impl.actions.RemoveAllBreakpointsInFileAction"/>
@@ -1219,6 +1225,7 @@
       <separator/>
       <reference ref="ShowExecutionPoint"/>
       <separator/>
+      <reference ref="EvaluateExpression" />
     </group>
 
     <group id="XDebugger.ToolWindow.LeftToolbar">
@@ -1653,6 +1660,11 @@
         <action class="com.intellij.ide.todo.TodoPanel$MyShowPackagesAction" id="TodoViewGroupByShowPackages"/>
         <action class="com.intellij.ide.todo.TodoPanel$MyFlattenPackagesAction" id="TodoViewGroupByFlattenPackage"/>
       </group>
+    </group>
+    
+    <group id="RunToolbarWidgetCustomizableActionGroup">
+      <action class="com.intellij.execution.ui.RunWithDropDownAction" id="RunWithDropDown"/>
+      <action class="com.intellij.execution.ui.StopWithDropDownAction" id="StopWithDropDown"/>
     </group>
 
     <action id="FileChooser.LightEditGotoOpenedFile"

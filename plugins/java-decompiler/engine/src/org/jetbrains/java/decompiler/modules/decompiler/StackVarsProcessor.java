@@ -1,4 +1,4 @@
-// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
@@ -14,7 +14,6 @@ import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionsGraph;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.util.FastSparseSetFactory.FastSparseSet;
-import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.SFormsFastMapDirect;
 
 import java.util.*;
@@ -539,17 +538,17 @@ public class StackVarsProcessor {
       VarVersionNode nd = stack.remove(0);
       setVisited.add(nd);
 
-      if (nd != varnode && (nd.flags & VarVersionNode.FLAG_PHANTOM_FINEXIT) == 0) {
+      if (nd != varnode && (nd.flags & VarVersionNode.FLAG_PHANTOM_FIN_EXIT) == 0) {
         res.add(nd);
       }
 
-      for (VarVersionEdge edge : nd.succs) {
+      for (VarVersionEdge edge : nd.successors) {
         VarVersionNode succ = edge.dest;
 
         if (!setVisited.contains(edge.dest)) {
 
           boolean isDominated = true;
-          for (VarVersionEdge prededge : succ.preds) {
+          for (VarVersionEdge prededge : succ.predecessors) {
             if (!setVisited.contains(prededge.source)) {
               isDominated = false;
               break;
@@ -584,8 +583,7 @@ public class StackVarsProcessor {
     }
 
     // compare protected ranges
-    if (!InterpreterUtil.equalObjects(ssau.getMapVersionFirstRange().get(leftpaar),
-                                      ssau.getMapVersionFirstRange().get(usedvar))) {
+    if (!Objects.equals(ssau.getMapVersionFirstRange().get(leftpaar), ssau.getMapVersionFirstRange().get(usedvar))) {
       return false;
     }
 

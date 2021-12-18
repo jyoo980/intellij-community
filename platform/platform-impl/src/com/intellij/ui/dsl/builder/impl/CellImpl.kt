@@ -5,10 +5,8 @@ import com.intellij.openapi.observable.properties.GraphProperty
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.openapi.util.NlsContexts
 import com.intellij.ui.components.Label
+import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.builder.Cell
-import com.intellij.ui.dsl.builder.HyperlinkEventAction
-import com.intellij.ui.dsl.builder.LabelPosition
-import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.gridLayout.Gaps
 import com.intellij.ui.dsl.gridLayout.HorizontalAlign
 import com.intellij.ui.dsl.gridLayout.VerticalAlign
@@ -23,9 +21,8 @@ import javax.swing.JLabel
 internal class CellImpl<T : JComponent>(
   private val dialogPanelConfig: DialogPanelConfig,
   component: T,
-  val parent: RowImpl,
-  val viewComponent: JComponent = component,
-  visualPaddings: Gaps?) : CellBaseImpl<Cell<T>>(), Cell<T> {
+  private val parent: RowImpl,
+  val viewComponent: JComponent = component) : CellBaseImpl<Cell<T>>(), Cell<T> {
 
   override var component: T = component
     private set
@@ -42,7 +39,7 @@ internal class CellImpl<T : JComponent>(
   var customGaps: Gaps? = null
     private set
 
-  val visualPaddings: Gaps = visualPaddings ?: getViewComponentVisualPaddings()
+  val visualPaddings = getViewComponentVisualPaddings()
 
   private var property: GraphProperty<*>? = null
   private var applyIfEnabled = false
@@ -80,7 +77,7 @@ internal class CellImpl<T : JComponent>(
     return this
   }
 
-  fun enabledFromParent(parentEnabled: Boolean) {
+  override fun enabledFromParent(parentEnabled: Boolean) {
     doEnabled(parentEnabled && enabled)
   }
 
@@ -93,12 +90,11 @@ internal class CellImpl<T : JComponent>(
   }
 
   override fun enabledIf(predicate: ComponentPredicate): Cell<T> {
-    enabled(predicate())
-    predicate.addListener { enabled(it) }
+    super.enabledIf(predicate)
     return this
   }
 
-  fun visibleFromParent(parentVisible: Boolean) {
+  override fun visibleFromParent(parentVisible: Boolean) {
     doVisible(parentVisible && visible)
   }
 
@@ -111,8 +107,7 @@ internal class CellImpl<T : JComponent>(
   }
 
   override fun visibleIf(predicate: ComponentPredicate): CellImpl<T> {
-    visible(predicate())
-    predicate.addListener { visible(it) }
+    super.visibleIf(predicate)
     return this
   }
 
@@ -133,6 +128,7 @@ internal class CellImpl<T : JComponent>(
   override fun label(label: JLabel, position: LabelPosition): CellImpl<T> {
     this.label = label
     labelPosition = position
+    label.putClientProperty(DslComponentPropertyInternal.CELL_LABEL, true)
     return this
   }
 
@@ -224,7 +220,9 @@ internal class CellImpl<T : JComponent>(
   }
 
   private fun getViewComponentVisualPaddings(): Gaps {
-    val insets = viewComponent.origin.insets
-    return Gaps(top = insets.top, left = insets.left, bottom = insets.bottom, right = insets.right)
+    val origin = viewComponent.origin
+    val insets = origin.insets
+    val customGaps = origin.getClientProperty(DslComponentProperty.VISUAL_PADDINGS) as? Gaps
+    return customGaps ?: Gaps(top = insets.top, left = insets.left, bottom = insets.bottom, right = insets.right)
   }
 }

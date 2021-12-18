@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.ClassifierDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.allowResolveInDispatchThread
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
+import org.jetbrains.kotlin.idea.completion.PsiClassLookupObject
 import org.jetbrains.kotlin.idea.completion.isAfterDot
 import org.jetbrains.kotlin.idea.completion.isArtificialImportAliasedDescriptor
 import org.jetbrains.kotlin.idea.completion.shortenReferences
@@ -17,16 +18,20 @@ import org.jetbrains.kotlin.idea.core.canAddRootPrefix
 import org.jetbrains.kotlin.idea.core.completion.DeclarationLookupObject
 import org.jetbrains.kotlin.idea.util.CallTypeAndReceiver
 import org.jetbrains.kotlin.idea.util.IdeDescriptorRenderers
+import org.jetbrains.kotlin.idea.util.ImportDescriptorResult
 import org.jetbrains.kotlin.idea.util.ImportInsertHelper
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.FqNameUnsafe
+import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
+import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.jetbrains.kotlin.renderer.render
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.QualifiedExpressionResolver.Companion.ROOT_PREFIX_FOR_IDE_RESOLUTION_MODE_WITH_DOT
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
+import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
 object KotlinClassifierInsertHandler : BaseDeclarationInsertHandler() {
     override fun handleInsert(context: InsertionContext, item: LookupElement) {
@@ -39,7 +44,7 @@ object KotlinClassifierInsertHandler : BaseDeclarationInsertHandler() {
             if (!context.isAfterDot()) {
                 val project = context.project
                 val psiDocumentManager = PsiDocumentManager.getInstance(project)
-                psiDocumentManager.commitAllDocuments()
+                psiDocumentManager.commitDocument(context.document)
 
                 val startOffset = context.startOffset
                 val document = context.document
@@ -49,12 +54,25 @@ object KotlinClassifierInsertHandler : BaseDeclarationInsertHandler() {
                 val descriptor = lookupObject.descriptor
                 if (descriptor?.isArtificialImportAliasedDescriptor == true) return
 
-                descriptor?.takeIf { DescriptorUtils.isTopLevelDeclaration(it) }?.let {
-                    ImportInsertHelper.getInstance(project).importDescriptor(file, it)
+                val qualifiedName = qualifiedName(lookupObject)
+
+                val position = file.findElementAt(context.startOffset)?.getParentOfType<KtElement>(strict = false) ?: file
+
+                val importAction: (() -> ImportDescriptorResult?)? =
+                    descriptor?.takeIf { DescriptorUtils.isTopLevelDeclaration(it) }
+                        ?.let {
+                            fun(): ImportDescriptorResult = ImportInsertHelper.getInstance(project).importDescriptor(position, it)
+                        } ?: lookupObject.safeAs<PsiClassLookupObject>()
+                        ?.let {
+                            fun(): ImportDescriptorResult = ImportInsertHelper.getInstance(project).importPsiClass(position, it.psiClass)
+                        }
+
+                importAction?.invoke()?.let { importDescriptorResult ->
+                    if (importDescriptorResult == ImportDescriptorResult.FAIL) {
+                        document.replaceString(startOffset, context.tailOffset, qualifiedName)
+                    }
                     return
                 }
-
-                val qualifiedName = qualifiedName(lookupObject)
 
                 // first try to resolve short name for faster handling
                 val token = file.findElementAt(startOffset)!!
@@ -83,7 +101,7 @@ object KotlinClassifierInsertHandler : BaseDeclarationInsertHandler() {
                 }
                 document.replaceString(startOffset, context.tailOffset, tempPrefix + qualifierNameWithRootPrefix + tempSuffix)
 
-                psiDocumentManager.commitAllDocuments()
+                psiDocumentManager.commitDocument(document)
 
                 val classNameStart = startOffset + tempPrefix.length
                 val classNameEnd = classNameStart + qualifierNameWithRootPrefix.length

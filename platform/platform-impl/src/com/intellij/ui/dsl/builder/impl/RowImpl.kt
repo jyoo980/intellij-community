@@ -19,16 +19,20 @@ import com.intellij.ui.JBIntSpinner
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.UIBundle
 import com.intellij.ui.components.*
+import com.intellij.ui.components.fields.ExpandableTextField
 import com.intellij.ui.dsl.UiDslException
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.Row
+import com.intellij.ui.dsl.builder.components.DslLabel
+import com.intellij.ui.dsl.builder.components.DslLabelType
 import com.intellij.ui.dsl.builder.components.SegmentedButtonAction
 import com.intellij.ui.dsl.builder.components.SegmentedButtonToolbar
 import com.intellij.ui.dsl.gridLayout.Gaps
 import com.intellij.ui.dsl.gridLayout.VerticalGaps
 import com.intellij.ui.layout.*
 import com.intellij.ui.popup.PopupState
+import com.intellij.util.Function
 import com.intellij.util.MathUtil
 import com.intellij.util.ui.JBEmptyBorder
 import com.intellij.util.ui.JBFont
@@ -37,13 +41,13 @@ import org.jetbrains.annotations.ApiStatus
 import java.awt.event.ActionEvent
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
+import java.util.*
 import javax.swing.*
 
 @ApiStatus.Internal
-internal class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
+internal open class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
                        private val panelContext: PanelContext,
                        private val parent: PanelImpl,
-                       val firstCellLabel: Boolean,
                        rowLayout: RowLayout) : Row {
 
   var rowLayout = rowLayout
@@ -92,19 +96,31 @@ internal class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
   }
 
   override fun <T : JComponent> cell(component: T, viewComponent: JComponent): CellImpl<T> {
-    return cell(component, viewComponent, null)
+    val result = CellImpl(dialogPanelConfig, component, this, viewComponent)
+    cells.add(result)
+    return result
+  }
+
+  override fun <T : JComponent> cell(component: T): CellImpl<T> {
+    return cell(component, component)
   }
 
   override fun cell() {
     cells.add(null)
   }
 
+  override fun <T : JComponent> scrollCell(component: T): CellImpl<T> {
+    return cell(component, JBScrollPane(component))
+  }
+
   fun cell(cell: CellBaseImpl<*>) {
     cells.add(cell)
   }
 
-  override fun placeholder(): Placeholder {
-    TODO("Not yet implemented")
+  override fun placeholder(): PlaceholderImpl {
+    val result = PlaceholderImpl(this)
+    cells.add(result)
+    return result
   }
 
   override fun enabled(isEnabled: Boolean): RowImpl {
@@ -174,34 +190,11 @@ internal class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
     return cell(JBCheckBox(text))
   }
 
-  override fun radioButton(text: String): Cell<JBRadioButton> {
-    val group = dialogPanelConfig.context.getButtonGroup() ?: throw UiDslException(
+  override fun radioButton(text: String, value: Any?): Cell<JBRadioButton> {
+    val buttonsGroup = dialogPanelConfig.context.getButtonsGroup() ?: throw UiDslException(
       "Button group must be defined before using radio button")
-    if (group is BindButtonGroup<*>) {
-      throw UiDslException("Parent button group provides binding but value for radioButton is not provided")
-    }
     val result = cell(JBRadioButton(text))
-    group.add(result.component)
-    return result
-  }
-
-  override fun radioButton(text: String, value: Any): Cell<JBRadioButton> {
-    val group = dialogPanelConfig.context.getButtonGroup() ?: throw UiDslException(
-      "Button group must be defined before using radio button with value")
-    if (group !is BindButtonGroup<*>) {
-      throw UiDslException("Parent button group doesn't provide binding for $value")
-    }
-    if (value::class.java != group.type) {
-      throw UiDslException("Value $value is incompatible with button group binding class ${group.type.simpleName}")
-    }
-    val binding = group.binding
-    val result = cell(JBRadioButton(text))
-    val component = result.component
-    group.add(component)
-    component.isSelected = binding.get() == value
-    result.onApply { if (component.isSelected) group.set(value) }
-    result.onReset { component.isSelected = binding.get() == value }
-    result.onIsModified { component.isSelected != (binding.get() == value) }
+    buttonsGroup.add(result, value)
     return result
   }
 
@@ -254,18 +247,19 @@ internal class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
     return cell(Label(text))
   }
 
-  override fun labelHtml(text: String, action: HyperlinkEventAction): Cell<JEditorPane> {
-    return cell(createHtml(text, action))
+  override fun text(@NlsContexts.Label text: String, maxLineLength: Int, action: HyperlinkEventAction): Cell<JEditorPane> {
+    val dslLabel = DslLabel(DslLabelType.LABEL)
+    dslLabel.action = action
+    dslLabel.setHtmlText(text, maxLineLength)
+    return cell(dslLabel)
   }
 
-  override fun comment(text: String, maxLineLength: Int, action: HyperlinkEventAction): CellImpl<JLabel> {
-    val comment = createComment(text, maxLineLength, action)
-    return cell(comment)
+  override fun comment(comment: String, maxLineLength: Int, action: HyperlinkEventAction): CellImpl<JEditorPane> {
+    return cell(createComment(comment, maxLineLength, action))
   }
 
-  override fun commentNoWrap(text: String): CellImpl<JLabel> {
-    val comment = createCommentNoWrap(text)
-    return cell(comment)
+  override fun commentHtml(text: String, action: HyperlinkEventAction): Cell<JEditorPane> {
+    return comment(text, MAX_LINE_LENGTH_WORD_WRAP, action)
   }
 
   override fun link(text: String, action: (ActionEvent) -> Unit): CellImpl<ActionLink> {
@@ -301,6 +295,13 @@ internal class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
                                          fileChooserDescriptor: FileChooserDescriptor,
                                          fileChosen: ((chosenFile: VirtualFile) -> String)?): Cell<TextFieldWithBrowseButton> {
     val result = cell(textFieldWithBrowseButton(project, browseDialogTitle, fileChooserDescriptor, fileChosen))
+    result.columns(COLUMNS_SHORT)
+    return result
+  }
+
+  override fun expandableTextField(parser: Function<in String, out MutableList<String>>,
+                                   joiner: Function<in MutableList<String>, String>): Cell<ExpandableTextField> {
+    val result = cell(ExpandableTextField(parser, joiner))
     result.columns(COLUMNS_SHORT)
     return result
   }
@@ -358,7 +359,8 @@ internal class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
     textArea.columns = COLUMNS_SHORT
     textArea.font = JBFont.regular()
     textArea.emptyText.setFont(JBFont.regular())
-    return cell(textArea, JBScrollPane(textArea), Gaps.EMPTY)
+    textArea.putClientProperty(DslComponentProperty.VISUAL_PADDINGS, Gaps.EMPTY)
+    return cell(textArea, JBScrollPane(textArea))
   }
 
   override fun <T> comboBox(model: ComboBoxModel<T>, renderer: ListCellRenderer<T?>?): Cell<ComboBox<T>> {
@@ -367,8 +369,8 @@ internal class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
     return cell(component)
   }
 
-  override fun <T> comboBox(items: Array<T>, renderer: ListCellRenderer<T?>?): Cell<ComboBox<T>> {
-    val component = ComboBox(items)
+  override fun <T> comboBox(items: Collection<T>, renderer: ListCellRenderer<T?>?): Cell<ComboBox<T>> {
+    val component = ComboBox(DefaultComboBoxModel(Vector(items)))
     component.renderer = renderer ?: SimpleListCellRenderer.create("") { it.toString() }
     return cell(component)
   }
@@ -388,28 +390,16 @@ internal class RowImpl(private val dialogPanelConfig: DialogPanelConfig,
 
   private fun doVisible(isVisible: Boolean) {
     for (cell in cells) {
-      when (cell) {
-        is CellImpl<*> -> cell.visibleFromParent(isVisible)
-        is PanelImpl -> cell.visibleFromParent(isVisible)
-      }
+      cell?.visibleFromParent(isVisible)
     }
     rowComment?.let { it.isVisible = isVisible }
   }
 
   private fun doEnabled(isEnabled: Boolean) {
-    cells.forEach {
-      when (it) {
-        is CellImpl<*> -> it.enabledFromParent(isEnabled)
-        is PanelImpl -> it.enabledFromParent(isEnabled)
-      }
+    for (cell in cells) {
+      cell?.enabledFromParent(isEnabled)
     }
     rowComment?.let { it.isEnabled = isEnabled }
-  }
-
-  private fun <T : JComponent> cell(component: T, viewComponent: JComponent, visualPaddings: Gaps?): CellImpl<T> {
-    val result = CellImpl(dialogPanelConfig, component, this, viewComponent, visualPaddings = visualPaddings)
-    cells.add(result)
-    return result
   }
 }
 

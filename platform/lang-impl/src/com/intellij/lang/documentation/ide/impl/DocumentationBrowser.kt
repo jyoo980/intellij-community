@@ -3,7 +3,10 @@ package com.intellij.lang.documentation.ide.impl
 
 import com.intellij.lang.documentation.DocumentationData
 import com.intellij.lang.documentation.DocumentationTarget
+import com.intellij.lang.documentation.LinkResult.ContentUpdater
 import com.intellij.lang.documentation.ide.DocumentationBrowserFacade
+import com.intellij.lang.documentation.ide.ui.DocumentationUI
+import com.intellij.lang.documentation.ide.ui.ScrollingPosition
 import com.intellij.lang.documentation.ide.ui.UISnapshot
 import com.intellij.lang.documentation.impl.DocumentationRequest
 import com.intellij.lang.documentation.impl.InternalLinkResult
@@ -13,6 +16,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.OrderEntry
 import com.intellij.openapi.roots.ui.configuration.ProjectSettingsService
@@ -20,6 +24,9 @@ import com.intellij.util.containers.Stack
 import com.intellij.util.lateinitVal
 import com.intellij.util.ui.EDT
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flowOn
 
 internal class DocumentationBrowser private constructor(
   private val project: Project
@@ -41,7 +48,7 @@ internal class DocumentationBrowser private constructor(
     forwardStack.clear()
   }
 
-  var snapshooter: () -> UISnapshot by lateinitVal()
+  var ui: DocumentationUI by lateinitVal()
 
   override val targetPointer: Pointer<out DocumentationTarget> get() = state.request.targetPointer
 
@@ -98,7 +105,13 @@ internal class DocumentationBrowser private constructor(
   private suspend fun handleLink(url: String) {
     EDT.assertIsEdt()
     val targetPointer = state.request.targetPointer
-    when (val internalResult = handleLink(project, targetPointer, url)) {
+    val internalResult = try {
+      handleLink(project, targetPointer, url)
+    }
+    catch (e: IndexNotReadyException) {
+      return // normal situation, nothing to do
+    }
+    when (internalResult) {
       is OrderEntry -> if (internalResult.isValid) {
         ProjectSettingsService.getInstance(project).openLibraryOrSdkSettings(internalResult)
       }
@@ -111,12 +124,24 @@ internal class DocumentationBrowser private constructor(
           // TODO ? can't resolve link to target & nobody can open the link
         }
       }
-      is InternalLinkResult.OK -> {
+      is InternalLinkResult.Request -> {
         backStack.push(historySnapshot())
         forwardStack.clear()
         browseDocumentation(internalResult.request, byLink = true)
       }
+      is InternalLinkResult.Updater -> {
+        handleContentUpdates(internalResult.updater)
+      }
     }
+  }
+
+  private suspend fun handleContentUpdates(updater: ContentUpdater) {
+    val updates: Flow<String> = updater.contentUpdates(ui.editorPane.text)
+    updates
+      .flowOn(Dispatchers.IO) // run flow in IO
+      .collectLatest { // handle results in EDT
+        ui.update(it, ScrollingPosition.Keep)
+      }
   }
 
   fun currentExternalUrl(): String? {
@@ -141,7 +166,7 @@ internal class DocumentationBrowser private constructor(
     EDT.assertIsEdt()
     return HistorySnapshot(
       state = state,
-      ui = snapshooter(),
+      ui = ui.uiSnapshot(),
     )
   }
 

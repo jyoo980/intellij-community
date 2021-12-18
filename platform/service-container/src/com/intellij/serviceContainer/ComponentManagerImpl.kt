@@ -484,8 +484,9 @@ abstract class ComponentManagerImpl @JvmOverloads constructor(
 
       if (implementation != null) {
         val componentAdapter = ServiceComponentAdapter(descriptor, pluginDescriptor, this)
-        if (componentKeyToAdapter.putIfAbsent(key, componentAdapter) != null) {
-          throw PluginException("Key $key duplicated", pluginDescriptor.pluginId)
+        val existingAdapter = componentKeyToAdapter.putIfAbsent(key, componentAdapter)
+        if (existingAdapter != null) {
+          throw PluginException("Key $key duplicated; existingAdapter: $existingAdapter; descriptor: ${descriptor.implementation}; app: $app; current plugin: ${pluginDescriptor.pluginId}", pluginDescriptor.pluginId)
         }
       }
     }
@@ -505,7 +506,8 @@ abstract class ComponentManagerImpl @JvmOverloads constructor(
 
       var effectivePluginId = pluginId
       if (effectivePluginId == PluginManagerCore.CORE_ID) {
-        effectivePluginId = PluginManagerCore.getPluginOrPlatformByClassName(componentClassName) ?: PluginManagerCore.CORE_ID
+        effectivePluginId = PluginManagerCore.getPluginDescriptorOrPlatformByClassName(componentClassName)?.pluginId
+                            ?: PluginManagerCore.CORE_ID
       }
 
       throw PluginException("Fatal error initializing '$componentClassName'", error, effectivePluginId)
@@ -1424,7 +1426,7 @@ fun handleComponentError(t: Throwable, componentClassName: String?, pluginId: Pl
   var effectivePluginId = pluginId
   if (effectivePluginId == null || PluginManagerCore.CORE_ID == effectivePluginId) {
     if (componentClassName != null) {
-      effectivePluginId = PluginManagerCore.getPluginByClassName(componentClassName)
+      effectivePluginId = PluginManager.getPluginByClassNameAsNoAccessToClass(componentClassName)
     }
   }
 

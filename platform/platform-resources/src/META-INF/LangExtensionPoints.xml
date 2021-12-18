@@ -259,6 +259,7 @@
     <extensionPoint name="executionTargetProvider" interface="com.intellij.execution.ExecutionTargetProvider" dynamic="true"/>
     <extensionPoint name="stepsBeforeRunProvider" interface="com.intellij.execution.BeforeRunTaskProvider" area="IDEA_PROJECT" dynamic="true"/>
     <extensionPoint name="runConfigurationBeforeRunProviderDelegate" interface="com.intellij.execution.impl.RunConfigurationBeforeRunProviderDelegate" dynamic="true"/>
+    <extensionPoint name="runConfigurationTargetEnvironmentAdjuster" interface="com.intellij.execution.target.RunConfigurationTargetEnvironmentAdjuster" dynamic="true"/>
 
     <extensionPoint name="executionTargetType"
                     interface="com.intellij.execution.target.TargetEnvironmentType" dynamic="true"/>
@@ -324,6 +325,7 @@
                     interface="com.intellij.codeInsight.navigation.GotoTargetPresentationProvider"/>
 
     <extensionPoint name="navbar" interface="com.intellij.ide.navigationToolbar.NavBarModelExtension" dynamic="true"/>
+    <extensionPoint name="navbarLeftSide" interface="com.intellij.ide.navigationToolbar.NavBarLeftSideExtension" dynamic="true"/>
 
     <extensionPoint name="lang.symbolSearchTarget" dynamic="true" beanClass="com.intellij.openapi.util.ClassExtensionPoint">
       <with attribute="forClass" implements="com.intellij.model.Symbol"/>
@@ -613,6 +615,8 @@
                     interface="com.intellij.lang.documentation.DocumentationLinkResolver"/>
     <extensionPoint name="lang.symbolDocumentation" dynamic="true"
                     interface="com.intellij.lang.documentation.symbol.SymbolDocumentationTargetFactory"/>
+    <extensionPoint name="lang.psiDocumentation" dynamic="true"
+                    interface="com.intellij.lang.documentation.psi.PsiDocumentationTargetFactory"/>
   </extensionPoints>
 </idea-plugin>
 

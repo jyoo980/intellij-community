@@ -3,6 +3,7 @@ package training.dsl
 
 import com.intellij.codeInsight.documentation.DocumentationComponent
 import com.intellij.codeInsight.documentation.DocumentationEditorPane
+import com.intellij.codeInsight.documentation.QuickDocUtil.isDocumentationV2Enabled
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataProvider
@@ -43,6 +44,8 @@ import org.jetbrains.annotations.Nls
 import training.dsl.LessonUtil.checkExpectedStateOfEditor
 import training.learn.LearnBundle
 import training.learn.LessonsBundle
+import training.learn.course.Lesson
+import training.learn.lesson.LessonManager
 import training.ui.*
 import training.ui.LearningUiUtil.findComponentWithTimeout
 import training.util.getActionById
@@ -67,6 +70,7 @@ object LessonUtil {
     val helpIdeName: String = ide ?: when (val name = ApplicationNamesInfo.getInstance().productName) {
       "GoLand" -> "go"
       "RubyMine" -> "ruby"
+      "AppCode" -> "objc"
       else -> name.lowercase(Locale.ENGLISH)
     }
     return "https://www.jetbrains.com/help/$helpIdeName/$topic"
@@ -311,6 +315,22 @@ object LessonUtil {
     val isSingleProject = ProjectManager.getInstance().openProjects.size == 1
     return if (isSingleProject) LessonsBundle.message("onboarding.return.to.welcome.remark") else ""
   }
+
+  fun showFeedbackNotification(lesson: Lesson, project: Project) {
+    invokeLater {
+      if (project.isDisposed) {
+        return@invokeLater
+      }
+      lesson.module.primaryLanguage?.let { langSupport ->
+        // exit link will show notification directly and reset this field to null
+        langSupport.onboardingFeedbackData?.let {
+          showOnboardingFeedbackNotification(project, it)
+        }
+        langSupport.onboardingFeedbackData = null
+      }
+    }
+  }
+
 }
 
 fun LessonContext.firstLessonCompletedMessage() {
@@ -434,10 +454,10 @@ fun TaskContext.waitSmartModeStep() {
 private val seconds01 = Timeout.timeout(1, TimeUnit.SECONDS)
 
 fun LessonContext.showWarningIfInplaceRefactoringsDisabled() {
-  if (EditorSettingsExternalizable.getInstance().isVariableInplaceRenameEnabled) return
   task {
-    val step = CompletableFuture<Boolean>()
-    addStep(step)
+    val step = stateCheck {
+      EditorSettingsExternalizable.getInstance().isVariableInplaceRenameEnabled
+    }
     val callbackId = LearningUiManager.addCallback {
       EditorSettingsExternalizable.getInstance().isVariableInplaceRenameEnabled = true
       step.complete(true)
@@ -449,11 +469,27 @@ fun LessonContext.showWarningIfInplaceRefactoringsDisabled() {
                                       strong(ApplicationBundle.message("radiogroup.rename.local.variables").dropLast(1)),
                                       callbackId)
     ) {
-      if (EditorSettingsExternalizable.getInstance().isVariableInplaceRenameEnabled) {
-        step.complete(true)
-        false
+      !EditorSettingsExternalizable.getInstance().isVariableInplaceRenameEnabled
+    }
+  }
+}
+
+fun LessonContext.restoreRefactoringOptionsInformer() {
+  if (EditorSettingsExternalizable.getInstance().isVariableInplaceRenameEnabled) return
+  restoreChangedSettingsInformer {
+    EditorSettingsExternalizable.getInstance().isVariableInplaceRenameEnabled = false
+  }
+}
+
+fun LessonContext.restoreChangedSettingsInformer(restoreSettings: () -> Unit) {
+  task {
+    runtimeText {
+      val newMessageIndex = LessonManager.instance.messagesNumber()
+      val callbackId = LearningUiManager.addCallback {
+        restoreSettings()
+        LessonManager.instance.removeMessageAndRepaint(newMessageIndex)
       }
-      else true
+      LessonsBundle.message("restore.settings.informer", callbackId)
     }
   }
 }
@@ -528,7 +564,7 @@ fun <ComponentType : Component> LessonContext.highlightAllFoundUiWithClass(compo
 }
 
 fun TaskContext.triggerOnQuickDocumentationPopup() {
-  if (Registry.`is`("documentation.v2")) {
+  if (isDocumentationV2Enabled()) {
     triggerByUiComponentAndHighlight(false, false) { _: DocumentationEditorPane -> true }
   }
   else {

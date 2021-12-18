@@ -2,6 +2,7 @@
 
 package org.jetbrains.kotlin.idea.roots
 
+import com.intellij.injected.editor.VirtualFileWindow
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.Key
 import com.intellij.openapi.externalSystem.model.project.ContentRootData
@@ -13,10 +14,7 @@ import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.rootManager
-import com.intellij.openapi.roots.ModifiableRootModel
-import com.intellij.openapi.roots.ModuleRootManager
-import com.intellij.openapi.roots.ProjectRootManager
-import com.intellij.openapi.roots.SourceFolder
+import com.intellij.openapi.roots.*
 import com.intellij.openapi.util.IntellijInternalApi
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.NonPhysicalFileSystem
@@ -35,8 +33,17 @@ import org.jetbrains.jps.model.java.JavaSourceRootType
 import org.jetbrains.jps.model.module.JpsModuleSourceRoot
 import org.jetbrains.jps.model.module.JpsModuleSourceRootType
 import org.jetbrains.kotlin.config.*
+import org.jetbrains.kotlin.idea.caches.resolve.analyze
+import org.jetbrains.kotlin.idea.caches.resolve.getResolutionFacade
+import org.jetbrains.kotlin.idea.caches.resolve.returnIfNoDescriptorForDeclarationException
 import org.jetbrains.kotlin.idea.configuration.GRADLE_SYSTEM_ID
 import org.jetbrains.kotlin.idea.framework.KotlinSdkType
+import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
+import org.jetbrains.kotlin.psi.KtElement
+import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
+import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
 private fun JpsModuleSourceRoot.getOrCreateProperties() =
     getProperties(rootType)?.also { (it as? JpsElementBase<*>)?.setParent(null) } ?: rootType.createDefaultProperties()
@@ -87,6 +94,30 @@ fun Module.collectKotlinAwareDestinationSourceRoots(): List<VirtualFile> {
         .mapNotNull { it.file }
         .toList()
 }
+
+fun isUnderKotlinSourceRootTypes(psiFile: PsiFile?): Boolean {
+    val ktFile = psiFile.safeAs<KtFile>() ?: return false
+    val file = ktFile.virtualFile?.takeIf { it !is VirtualFileWindow && it.fileSystem !is NonPhysicalFileSystem } ?: return false
+    val projectFileIndex = ProjectRootManager.getInstance(ktFile.project).fileIndex
+    return projectFileIndex.isUnderSourceRootOfType(file, KOTLIN_AWARE_SOURCE_ROOT_TYPES)
+}
+
+@JvmOverloads
+fun KtElement.safeAnalyzeNonSourceRootCode(
+    bodyResolveMode: BodyResolveMode = BodyResolveMode.FULL
+): BindingContext = safeAnalyzeNonSourceRootCode(getResolutionFacade(), bodyResolveMode)
+
+fun KtElement.safeAnalyzeNonSourceRootCode(
+    resolutionFacade: ResolutionFacade,
+    bodyResolveMode: BodyResolveMode = BodyResolveMode.FULL
+): BindingContext =
+    try {
+        analyze(resolutionFacade, bodyResolveMode)
+    } catch (e: Exception) {
+        e.returnIfNoDescriptorForDeclarationException(condition = {
+            it && (!isPhysical || !isUnderKotlinSourceRootTypes(containingFile))
+        }) { BindingContext.EMPTY }
+    }
 
 fun isOutsideSourceRootSet(psiFile: PsiFile?, sourceRootTypes: Set<JpsModuleSourceRootType<*>>): Boolean {
     if (psiFile == null || psiFile is PsiCodeFragment) return false

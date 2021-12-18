@@ -6,12 +6,10 @@ import com.intellij.openapi.editor.colors.FontPreferences.DEFAULT_FONT_SIZE
 import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNode
 import com.intellij.openapi.vcs.changes.ui.ChangesTreeCellRenderer
-import com.intellij.ui.CellRendererPanel
-import com.intellij.ui.ColoredTreeCellRenderer
-import com.intellij.ui.LayeredIcon
-import com.intellij.ui.TextIcon
+import com.intellij.ui.*
 import com.intellij.ui.paint.PaintUtil.RoundingMode
 import com.intellij.util.ui.JBUI.Borders.emptyRight
+import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.UIUtil.FontSize
 import com.intellij.util.ui.UIUtil.getFontSize
 import icons.CollaborationToolsIcons.*
@@ -24,10 +22,9 @@ import javax.swing.JLabel
 import javax.swing.JTree
 import javax.swing.tree.TreeCellRenderer
 
-class CodeReviewProgressRenderer(
+internal class CodeReviewProgressRenderer(
   private val renderer: ColoredTreeCellRenderer,
-  private val readingStateProvider: (ChangesBrowserNode<*>) -> Boolean,
-  private val discussionsCountProvider: (ChangesBrowserNode<*>) -> Int
+  private val codeReviewProgressStateProvider: (ChangesBrowserNode<*>) -> NodeCodeReviewProgressState
 ) : CellRendererPanel(), TreeCellRenderer {
 
   private val iconLabel = JLabel().apply { border = emptyRight(10) }
@@ -58,32 +55,44 @@ class CodeReviewProgressRenderer(
     ChangesTreeCellRenderer.customize(this, selected)
 
     renderer.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus)
-    iconLabel.icon = getIcon(tree, value)
+    iconLabel.icon = getIcon(value)
 
     return this
   }
 
-  private fun getIcon(tree: JTree, node: ChangesBrowserNode<*>): Icon? {
-    val isRead = readingStateProvider(node)
-    val discussionsCount = discussionsCountProvider(node)
+  private fun getIcon(node: ChangesBrowserNode<*>): Icon? {
+    val state = codeReviewProgressStateProvider(node)
+    val isRead = state.isRead
+    val discussionsCount = state.discussionsCount
 
     if (discussionsCount <= 0) return getReadingStateIcon(isRead)
 
-    return getReadingStateWithDiscussionsIcon(isRead, discussionsCount, foreground = tree.background)
+    return getReadingStateWithDiscussionsIcon(isRead, discussionsCount)
   }
 
   private fun getReadingStateIcon(isRead: Boolean): Icon? = if (!isRead) FileUnread else null
 
-  private fun getReadingStateWithDiscussionsIcon(isRead: Boolean, discussionsCount: Int, foreground: Color?): Icon {
+  private fun getReadingStateWithDiscussionsIcon(isRead: Boolean, discussionsCount: Int): Icon {
     require(discussionsCount > 0)
 
+    if (discussionsCount > 9) {
+      return if (!isRead) CommentUnreadMany else CommentReadMany
+    }
+
     val backgroundIcon = if (!isRead) CommentUnread else CommentUnresolved
+    // use only two colors to be consistent with unread/read many icons
+    val textIconColor = JBColor(Color.white, Color(0x3C3F41))
+    val discussionsCountIcon = createDiscussionsCountIcon(discussionsCount, textIconColor)
 
-    val text: @NlsSafe String = if (discussionsCount > 9) "9+" else discussionsCount.toString()
-    val textIcon = TextIcon(text, foreground, null, 0)
-    textIcon.setFont(discussionsCountFont.deriveFont(getFontSize(FontSize.MINI)))
+    return combine(backgroundIcon, discussionsCountIcon)
+  }
 
-    return combine(backgroundIcon, textIcon)
+  private fun createDiscussionsCountIcon(discussionsCount: Int, color: Color?): Icon {
+    require(discussionsCount in 1..9)
+    val text: @NlsSafe String = discussionsCount.toString()
+    return TextIcon(text, color, null, 0).apply {
+      setFont(discussionsCountFont.deriveFont(getFontSize(FontSize.MINI)))
+    }
   }
 
   private fun combine(backgroundIcon: Icon, textIcon: Icon): Icon {

@@ -1,7 +1,9 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs.actions;
 
+import com.intellij.ide.DataManager;
 import com.intellij.ide.ui.customization.CustomActionsSchema;
+import com.intellij.idea.ActionsBundle;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction;
 import com.intellij.openapi.actionSystem.impl.ActionButtonWithText;
@@ -14,6 +16,7 @@ import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.util.ui.JBInsets;
 import org.jetbrains.annotations.NotNull;
 
+import javax.swing.FocusManager;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.InputEvent;
@@ -28,19 +31,6 @@ public class VcsQuickActionsToolbarPopup extends IconWithTextAction implements C
 
   public VcsQuickActionsToolbarPopup() {
     getTemplatePresentation().setText(VcsBundle.messagePointer("vcs.quicklist.popup.title"));
-  }
-
-  private static void showPopup(@NotNull AnActionEvent e, @NotNull ListPopup popup) {
-    InputEvent mouseEvent = e.getInputEvent();
-    if (mouseEvent instanceof MouseEvent) {
-      Object source = mouseEvent.getSource();
-      if (source instanceof JComponent) {
-        Point topLeftCorner = ((JComponent)source).getLocationOnScreen();
-        Point bottomLeftCorner = new Point(topLeftCorner.x, topLeftCorner.y + ((JComponent)source).getHeight());
-        popup.setLocation(bottomLeftCorner);
-        popup.show((JComponent)source);
-      }
-    }
   }
 
   @NotNull
@@ -67,11 +57,35 @@ public class VcsQuickActionsToolbarPopup extends IconWithTextAction implements C
 
     if (group.getChildrenCount() == 0) return;
 
+    var dataContext = DataManager.getInstance().getDataContext(FocusManager.getCurrentManager().getFocusOwner());
     ListPopup popup = JBPopupFactory.getInstance().createActionGroupPopup(
       VcsBundle.message("action.Vcs.Toolbar.QuickListPopupAction.text"),
-      group, e.getDataContext(), JBPopupFactory.ActionSelectionAid.NUMBERING, true, null, -1,
-      action -> true, e.getPlace());
+      group, dataContext, JBPopupFactory.ActionSelectionAid.NUMBERING, true, null, -1,
+      action -> true, ActionPlaces.RUN_TOOLBAR_LEFT_SIDE);
 
-    showPopup(e, popup);
+    var component = e.getInputEvent().getComponent();
+    popup.showUnderneathOf(component);
+
+  }
+
+  @Override
+  public void update(@NotNull AnActionEvent e) {
+    if (e.getPlace() != ActionPlaces.MAIN_TOOLBAR) {
+      e.getPresentation().setEnabledAndVisible(false);
+      return;
+    }
+  }
+
+  private static void showPopup(@NotNull AnActionEvent e, @NotNull ListPopup popup) {
+    InputEvent mouseEvent = e.getInputEvent();
+    if (mouseEvent instanceof MouseEvent) {
+      Object source = mouseEvent.getSource();
+      if (source instanceof JComponent) {
+        Point topLeftCorner = ((JComponent)source).getLocationOnScreen();
+        Point bottomLeftCorner = new Point(topLeftCorner.x, topLeftCorner.y + ((JComponent)source).getHeight());
+        popup.setLocation(bottomLeftCorner);
+        popup.show((JComponent)source);
+      }
+    }
   }
 }

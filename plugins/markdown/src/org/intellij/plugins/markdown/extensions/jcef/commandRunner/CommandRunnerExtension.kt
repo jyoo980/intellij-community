@@ -17,32 +17,24 @@ import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.invokeLater
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.editor.ex.util.EditorUtil
 import com.intellij.openapi.fileEditor.TextEditorWithPreview
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.ui.jcef.JBCefApp
-import com.intellij.ui.paint.PaintUtil
-import com.intellij.ui.scale.ScaleContext
-import com.intellij.util.IconUtil
-import com.intellij.util.ui.ImageUtil
 import org.intellij.plugins.markdown.MarkdownBundle
 import org.intellij.plugins.markdown.extensions.MarkdownBrowserPreviewExtension
 import org.intellij.plugins.markdown.extensions.MarkdownConfigurableExtension
 import org.intellij.plugins.markdown.extensions.MarkdownExtensionsUtil
 import org.intellij.plugins.markdown.fileActions.utils.MarkdownFileEditorUtils
-import org.intellij.plugins.markdown.ui.preview.MarkdownHtmlPanel
-import org.intellij.plugins.markdown.injection.alias.LanguageGuesser
+import org.intellij.plugins.markdown.injection.aliases.CodeFenceLanguageGuesser
+import org.intellij.plugins.markdown.settings.MarkdownSettings
 import org.intellij.plugins.markdown.ui.preview.MarkdownEditorWithPreview
+import org.intellij.plugins.markdown.ui.preview.MarkdownHtmlPanel
 import org.intellij.plugins.markdown.ui.preview.PreviewStaticServer
 import org.intellij.plugins.markdown.ui.preview.ResourceProvider
 import org.intellij.plugins.markdown.ui.preview.html.MarkdownUtil
-import java.awt.image.BufferedImage
-import java.io.ByteArrayOutputStream
-import javax.imageio.ImageIO
-import javax.swing.Icon
+import java.util.concurrent.ConcurrentHashMap
 
 internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
                                       private val provider: Provider)
@@ -94,7 +86,7 @@ internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
   fun processCodeLine(rawCodeLine: String, insideFence: Boolean): String {
     val project = panel.project
     val file = panel.virtualFile
-    if (project != null && file != null
+    if (project != null && file != null && file.parent != null
         && matches(project, file.parent.canonicalPath, true, rawCodeLine.trim(), allowRunConfigurations = !insideFence)
     ) {
       val hash = MarkdownUtil.md5(rawCodeLine, "")
@@ -108,7 +100,7 @@ internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
   }
 
   fun processCodeBlock(codeFenceRawContent: String, language: String): String {
-    val lang = LanguageGuesser.guessLanguageForInjection(language)
+    val lang = CodeFenceLanguageGuesser.guessLanguageForInjection(language)
     val runner = MarkdownRunner.EP_NAME.extensionList.firstOrNull {
       it.isApplicable(lang)
     }
@@ -155,9 +147,11 @@ internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
     val executor = ExecutorRegistry.getInstance().getExecutorById(executorId) ?: DefaultRunExecutor.getRunExecutorInstance()
     val project = panel.project
     val virtualFile = panel.virtualFile
-    if (project !=null && virtualFile != null) {
+    if (project != null && virtualFile != null) {
       ApplicationManager.getApplication().invokeLater {
-        runner.run(command, project, virtualFile.parent.canonicalPath, executor)
+        TrustedProjectUtil.executeIfTrusted(project) {
+          runner.run(command, project, virtualFile.parent.canonicalPath, executor)
+        }
       }
     }
   }
@@ -168,17 +162,18 @@ internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
 
 
   class Provider: MarkdownBrowserPreviewExtension.Provider, MarkdownConfigurableExtension, ResourceProvider {
-    val extensions = mutableMapOf<VirtualFile, CommandRunnerExtension>()
+    val extensions = ConcurrentHashMap<VirtualFile, CommandRunnerExtension>()
 
     init {
       PreviewStaticServer.instance.registerResourceProvider(this)
     }
 
     override fun createBrowserExtension(panel: MarkdownHtmlPanel): MarkdownBrowserPreviewExtension? {
-      if (!isEnabled || panel.virtualFile == null || panel.project == null) return null
-
-      extensions.computeIfAbsent(panel.virtualFile!!) { CommandRunnerExtension(panel, this) }
-      return extensions[panel.virtualFile]
+      val virtualFile = panel.virtualFile ?: return null
+      if (panel.project?.let(MarkdownSettings::getInstance)?.isRunnerEnabled == false) {
+        return null
+      }
+      return extensions.computeIfAbsent(virtualFile) { CommandRunnerExtension(panel, this) }
     }
 
     override val displayName: String
@@ -203,7 +198,7 @@ internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
         else -> return null
       }
       val format = resourceName.substringAfterLast(".")
-      return ResourceProvider.Resource(icon2Stream(icon, format))
+      return ResourceProvider.Resource(MarkdownExtensionsUtil.loadIcon(icon, format))
     }
   }
 
@@ -218,7 +213,8 @@ internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
     private const val RUN_BLOCK_ICON = "runrun.png"
 
     fun getRunnerByFile(file: VirtualFile?) : CommandRunnerExtension? {
-      return MarkdownExtensionsUtil.findBrowserExtensionProvider<Provider>()?.extensions?.get(file)
+      val provider = MarkdownExtensionsUtil.findBrowserExtensionProvider<Provider>()
+      return provider?.extensions?.get(file)
     }
 
     fun matches(project: Project, workingDirectory: String?, localSession: Boolean,
@@ -237,10 +233,13 @@ internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
     fun execute(project: Project, workingDirectory: String?, localSession: Boolean, command: String, executor: Executor): Boolean {
       val dataContext = createDataContext(project, localSession, workingDirectory, executor)
       val trimmedCmd = command.trim()
-      return RunAnythingProvider.EP_NAME.extensionList
-        .any { provider ->
-          provider.findMatchingValue(dataContext, trimmedCmd)?.let { provider.execute(dataContext, it); return true } ?: false
+      for (provider in RunAnythingProvider.EP_NAME.extensionList) {
+        val value = provider.findMatchingValue(dataContext, trimmedCmd) ?: continue
+        return TrustedProjectUtil.executeIfTrusted(project) {
+          provider.execute(dataContext, value)
         }
+      }
+      return false
     }
 
     private fun createDataContext(project: Project, localSession: Boolean, workingDirectory: String?, executor: Executor? = null): DataContext {
@@ -263,20 +262,6 @@ internal class CommandRunnerExtension(val panel: MarkdownHtmlPanel,
       return (it !is RunAnythingCommandProvider
               && it !is RunAnythingRecentProjectProvider
               && (it !is RunAnythingRunConfigurationProvider || allowRunConfigurations))
-    }
-
-    fun icon2Stream(icon: Icon, format: String): ByteArray {
-      val output = ByteArrayOutputStream()
-      val fontSize = JBCefApp.normalizeScaledSize(EditorUtil.getEditorFont().size + 1).toFloat()
-      //MarkdownExtension.currentProjectSettings.fontSize.toFloat()
-      val scaledIcon = IconUtil.scaleByFont(icon, null, fontSize)
-      val image = ImageUtil.createImage(ScaleContext.create(), scaledIcon.iconWidth.toDouble(), scaledIcon.iconHeight.toDouble(),
-        BufferedImage.TYPE_INT_ARGB, PaintUtil.RoundingMode.FLOOR)
-      scaledIcon.paintIcon(null, image.graphics, 0, 0)
-
-      //val image = IconUtil.toBufferedImage(scaledIcon, true)
-      ImageIO.write(image, format, output)
-      return output.toByteArray()
     }
 
     private val LOG = logger<CommandRunnerExtension>()

@@ -46,7 +46,7 @@ import java.util.function.Function
 import java.util.function.Supplier
 import javax.swing.event.HyperlinkEvent
 
-internal object MavenWslUtil : MavenUtil() {
+object MavenWslUtil : MavenUtil() {
   @JvmStatic
   fun getWslJdk(project: Project, name: String): Sdk {
     val projectWslDistr = tryGetWslDistribution(project) ?: throw IllegalStateException("project $project is not WSL based");
@@ -72,7 +72,7 @@ internal object MavenWslUtil : MavenUtil() {
     if (sdkByExactName != null && projectWslDistr == tryGetWslDistributionForPath(sdkByExactName.homePath)) {
       return sdkByExactName
     }
-    return MavenProjectBuilder.suggestProjectSdk(project) ?: throw InvalidSdkException(name)
+    return MavenUtil.suggestProjectSdk(project) ?: throw InvalidSdkException(name)
   }
 
   @JvmStatic

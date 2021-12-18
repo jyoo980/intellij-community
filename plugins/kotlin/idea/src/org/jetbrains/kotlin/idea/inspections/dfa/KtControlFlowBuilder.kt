@@ -148,6 +148,9 @@ class KtControlFlowBuilder(val factory: DfaValueFactory, val context: KtExpressi
 
     private fun processDestructuringDeclaration(expr: KtDestructuringDeclaration) {
         processExpression(expr.initializer)
+        for (entry in expr.entries) {
+            addInstruction(FlushVariableInstruction(factory.varFactory.createVariableValue(KtVariableDescriptor(entry))))
+        }
     }
 
     data class KotlinCatchClauseDescriptor(val clause : KtCatchClause): CatchClauseDescriptor {
@@ -880,7 +883,7 @@ class KtControlFlowBuilder(val factory: DfaValueFactory, val context: KtExpressi
             val parameter = expr.loopParameter
             if (parameter == null) {
                 broken = true
-                return
+                return@inlinedBlock
             }
             val parameterVar = factory.varFactory.createVariableValue(KtVariableDescriptor(parameter))
             val parameterType = parameter.type()

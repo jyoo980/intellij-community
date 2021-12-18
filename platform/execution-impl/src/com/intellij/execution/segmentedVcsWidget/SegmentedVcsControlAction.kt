@@ -9,26 +9,33 @@ import java.awt.BorderLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
 
-class SegmentedVcsControlAction : SegmentedBarActionComponent(ActionPlaces.RUN_TOOLBAR) {
+class SegmentedVcsControlAction : SegmentedBarActionComponent() {
   init {
     ActionManager.getInstance().getAction("SegmentedVcsActionsBarGroup")?.let {
-      if(it is ActionGroup) {
-          actionGroup = it
+      if (it is ActionGroup) {
+        actionGroup = it
       }
     }
   }
 
   override fun update(e: @NotNull AnActionEvent) {
+    if (e.place !== ActionPlaces.MAIN_TOOLBAR) {
+      e.presentation.isEnabledAndVisible = false
+      return
+    }
     super.update(e)
     e.presentation.isVisible = actionGroup != null
   }
-  override fun createCustomComponent(presentation: Presentation, place_: String): JComponent {
-    return JPanel(BorderLayout()).apply{
-      add(super.createCustomComponent(presentation, place_), BorderLayout.CENTER)
+
+  override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+    return JPanel(BorderLayout()).apply {
+      add(super.createCustomComponent(presentation, place), BorderLayout.CENTER)
     }
   }
 
-  override fun createSegmentedActionToolbar(presentation: Presentation, place: String, group: ActionGroup): SegmentedActionToolbarComponent {
+  override fun createSegmentedActionToolbar(presentation: Presentation,
+                                            place: String,
+                                            group: ActionGroup): SegmentedActionToolbarComponent {
     return SegmentedActionToolbarComponent(place, group, false)
   }
 }

@@ -9,7 +9,7 @@ import com.intellij.psi.util.CachedValueProvider
 import com.intellij.util.SystemProperties
 
 internal class CallSaulAction : DumbAwareAction() {
-  override fun actionPerformed(e: AnActionEvent) = service<Saul>().sortThingsOut(e.project!!)
+  override fun actionPerformed(e: AnActionEvent) = service<Saul>().sortThingsOut(RecoveryScope.createInstance(e))
 
   override fun update(e: AnActionEvent) {
     e.presentation.isEnabledAndVisible = e.project != null
@@ -20,9 +20,18 @@ internal class CacheRecoveryActionGroup: ComputableActionGroup() {
   override fun createChildrenProvider(actionManager: ActionManager): CachedValueProvider<Array<AnAction>> {
     return CachedValueProvider {
       isPopup = ApplicationManager.getApplication().isInternal
-      val actions = if (isSaulHere) arrayOf<AnAction>(actionManager.getAction("CallSaul"), Separator.getInstance()) + service<Saul>().sortedActions.map {
-        it.toAnAction()
-      }.toTypedArray() else emptyArray()
+      val actions = if (isSaulHere) {
+        val baseActions = arrayListOf<AnAction>(actionManager.getAction("CallSaul"))
+
+        if (isPopup) {
+          baseActions.add(Separator.getInstance())
+        }
+
+        (baseActions + service<Saul>().sortedActions.map {
+          it.toAnAction()
+        }).toTypedArray()
+      }
+      else emptyArray()
       CachedValueProvider.Result.create(actions, service<Saul>().modificationRecoveryActionTracker)
     }
   }
@@ -31,13 +40,17 @@ internal class CacheRecoveryActionGroup: ComputableActionGroup() {
     val recoveryAction = this
     return object: DumbAwareAction(recoveryAction.presentableName) {
       override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project!!
-        recoveryAction.performUnderProgress(project, false)
+        val scope = RecoveryScope.createInstance(e)
+        recoveryAction.performUnderProgress(scope,false)
       }
 
       override fun update(e: AnActionEvent) {
-        val project = e.project
-        e.presentation.isEnabledAndVisible = project != null && recoveryAction.canBeApplied(project) && ApplicationManager.getApplication().isInternal
+        if (e.project == null) {
+          e.presentation.isEnabledAndVisible = false
+          return
+        }
+        val scope = RecoveryScope.createInstance(e)
+        e.presentation.isEnabledAndVisible = recoveryAction.canBeApplied(scope) && ApplicationManager.getApplication().isInternal
       }
     }
   }

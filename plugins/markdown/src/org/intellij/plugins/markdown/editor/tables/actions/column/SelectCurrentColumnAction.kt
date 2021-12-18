@@ -5,10 +5,10 @@ import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.command.executeCommand
 import com.intellij.openapi.editor.Editor
 import org.intellij.plugins.markdown.editor.tables.TableModificationUtils.selectColumn
-import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTableImpl
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownTable
 
 internal abstract class SelectCurrentColumnAction(private val wholeColumn: Boolean): ColumnBasedTableAction() {
-  override fun performAction(editor: Editor, table: MarkdownTableImpl, columnIndex: Int) {
+  override fun performAction(editor: Editor, table: MarkdownTable, columnIndex: Int) {
     val caretOffset = editor.caretModel.currentCaret.offset
     val insideHeader = table.headerRow?.textRange?.contains(caretOffset) == true
     runWriteAction {
@@ -17,13 +17,12 @@ internal abstract class SelectCurrentColumnAction(private val wholeColumn: Boole
           editor,
           columnIndex,
           withHeader = insideHeader || wholeColumn,
-          withSeparator = wholeColumn
+          withSeparator = wholeColumn,
+          withBorders = true
         )
       }
     }
   }
 
-  class SelectContentCells: SelectCurrentColumnAction(wholeColumn = false)
-
-  //class SelectWholeColumn: SelectCurrentColumnAction(wholeColumn = true)
+  class SelectContentCells: SelectCurrentColumnAction(wholeColumn = true)
 }

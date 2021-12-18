@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.jps.javac;
 
 import io.netty.bootstrap.Bootstrap;
@@ -29,7 +29,7 @@ import java.util.concurrent.*;
 /**
  * @author Eugene Zhuravlev
  */
-public class ExternalJavacProcess {
+public final class ExternalJavacProcess {
   public static final String JPS_JAVA_COMPILING_TOOL_PROPERTY = "jps.java.compiling.tool";
   private final ChannelInitializer<?> myChannelInitializer;
   private final EventLoopGroup myEventLoopGroup;
@@ -192,7 +192,7 @@ public class ExternalJavacProcess {
       );
       return JavacProtoUtil.toMessage(sessionId, JavacProtoUtil.createBuildCompletedResponse(rc));
     }
-    catch (Throwable e) {
+    catch (Exception e) {
       //noinspection UseOfSystemOutOrSystemErr
       e.printStackTrace(System.err);
       return JavacProtoUtil.toMessage(sessionId, JavacProtoUtil.createFailure(e.getMessage(), e));
@@ -258,6 +258,7 @@ public class ExternalJavacProcess {
               myThreadPool.execute(new Runnable() {
                 @Override
                 public void run() {
+                  boolean keepRunning = myKeepRunning;
                   try {
                     final JavacRemoteProto.Message result = compile(context, sessionId, options, files, cp, platformCp, modulePath, upgradeModulePath, srcPath, outs, new CanceledStatus() {
                       @Override
@@ -267,9 +268,20 @@ public class ExternalJavacProcess {
                     });
                     context.channel().writeAndFlush(result).awaitUninterruptibly();
                   }
+                  catch (Throwable throwable) {
+                    // in case of unexpected exception exit, to ensure the process is not stuck in a problematic state
+                    keepRunning = false;
+                    throwable.printStackTrace(System.err);
+                    try {
+                      // attempt to report via proto
+                      context.channel().writeAndFlush(JavacProtoUtil.toMessage(sessionId, JavacProtoUtil.createFailure(throwable.getMessage(), throwable)));
+                    }
+                    catch (Throwable ignored) {
+                    }
+                  }
                   finally {
                     myCanceled.remove(sessionId); // state cleanup
-                    if (myKeepRunning) {
+                    if (keepRunning) {
                       JavacMain.clearCompilerZipFileCache();
                       //noinspection CallToSystemGC
                       System.gc();

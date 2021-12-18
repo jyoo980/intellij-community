@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.ui.experimental.toolbar
 
 import com.intellij.application.options.RegistryManager
@@ -40,8 +40,7 @@ internal class ExperimentalToolbarSettings private constructor() : ToolbarSettin
       isVisible = booleanValue
 
       val uiSettings = UISettings.instance
-      val uiSettingsState = uiSettings.state
-      uiSettingsState.showNavigationBar = !booleanValue
+      uiSettings.showNavigationBar = !booleanValue && uiSettings.showNavigationBar
       uiSettings.fireUISettingsChanged()
     }
   }
@@ -49,13 +48,11 @@ internal class ExperimentalToolbarSettings private constructor() : ToolbarSettin
   init {
     val application = ApplicationManager.getApplication()
     if (application == null || application.isDisposed) {
-      throw ExtensionNotApplicableException.INSTANCE
+      throw ExtensionNotApplicableException.create()
     }
 
     Disposer.register(application, this)
     newToolbarEnabled.addListener(ToolbarRegistryListener(), this)
-
-    UISettings.instance.state.showNavigationBar = !(isEnabled && !navBarVisible)
   }
 
   override fun getState(): ExperimentalToolbarSettingsState = toolbarState
@@ -66,36 +63,19 @@ internal class ExperimentalToolbarSettings private constructor() : ToolbarSettin
     if (isEnabled) {
       logger.info("Loaded state: $state")
     }
-
-    UISettings.instance.state.showNavigationBar = !(isEnabled && !navBarVisible)
   }
 
   override fun dispose() {}
 
-  /**
-   * True if new the toolbar is enabled
-   */
   override var isEnabled: Boolean
     get() = newToolbarEnabled.asBoolean()
     set(value) = newToolbarEnabled.setValue(value)
 
-  /**
-   * True if new the toolbar is visible
-   */
   override var isVisible: Boolean
     get() = toolbarState.showNewMainToolbar
     set(value) {
       toolbarState.showNewMainToolbar = value
       val uiSettingState = UISettings.instance.state
       uiSettingState.showMainToolbar = !value && uiSettingState.showMainToolbar
-      UISettings.instance.fireUISettingsChanged()
-    }
-
-  override var navBarVisible: Boolean
-    get() = toolbarState.showNavBarWithNewToolbar
-    set(value) {
-      if (isEnabled && isVisible) {
-        toolbarState.showNavBarWithNewToolbar = value
-      }
     }
 }

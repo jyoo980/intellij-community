@@ -3,19 +3,19 @@
   "fixed": false,
   "ui": [
     {
-      "key": "BookmarkIcon.background",
+      "key": "Bookmark.iconBackground",
       "description": "The background of the default bookmark icon."
     },
     {
-      "key": "BookmarkMnemonicIcon.foreground",
+      "key": "Bookmark.Mnemonic.iconForeground",
       "description": "The text color on the bookmark icon with mnemonic."
     },
     {
-      "key": "BookmarkMnemonicIcon.background",
+      "key": "Bookmark.Mnemonic.iconBackground",
       "description": "The background of the bookmark icon with mnemonic."
     },
     {
-      "key": "BookmarkMnemonicIcon.borderColor",
+      "key": "Bookmark.Mnemonic.iconBorderColor",
       "description": "The border color of the bookmark icon with mnemonic."
     },
     {
@@ -541,6 +541,31 @@
       "description": "Color of the text in notification balloon"
     },
     {
+      "key": "Notification.linkForeground",
+      "description": "Color of link actions in the notification."
+    },
+    {
+      "key": "Notification.arc",
+      "description": "Notification border corners radius"
+    },
+    {
+      "key": "Notification.borderInsets",
+      "description": "Top/Left/Bottom/Right insets of the notification"
+    },
+    {
+      "key": "Notification.iconOffsetSize",
+      "description": "Width/HorizontalOffset: Width for icon component, HorizontalOffset horizontal X for start icon"
+    },
+    {
+      "key": "Notification.titleContentInset"
+    },
+    {
+      "key": "Notification.contentActionsInset"
+    },
+    {
+      "key": "Notification.titleActionsInset"
+    },
+    {
       "key": "Notification.MoreButton.background",
       "description": "The \"# more\" area in a notification. Appears when there are several notifications of the same type"
     },
@@ -786,6 +811,11 @@
       "since": "2019.1"
     },
     {
+      "key": "SearchField.errorForeground",
+      "description": "Search field foreground of not found entries",
+      "since": "2022.1"
+    },
+    {
       "key": "SearchMatch.endBackground",
       "description": "The yellow rectangle under the search match text"
     },
@@ -935,6 +965,16 @@
     },
     {
       "key": "ToggleButton.onForeground"
+    },
+    {
+      "key": "ToolBar.horizontalToolbarInsets",
+      "description": "Default insets for horizontal action toolbars",
+      "since": "2022.1"
+    },
+    {
+      "key": "ToolBar.verticalToolbarInsets",
+      "description": "Default insets for vertical action toolbars",
+      "since": "2022.1"
     },
     {
       "key": "ToolTip.infoForeground",
@@ -1278,32 +1318,32 @@
       "since": "2021.2"
     },
     {
-      "key": "Lesson.Tooltip.background",
+      "key": "Tooltip.Learning.background",
       "description": "Background for tooltips used in lessons",
       "since": "2021.2"
     },
     {
-      "key": "Lesson.Tooltip.borderColor",
+      "key": "Tooltip.Learning.borderColor",
       "description": "Border color for tooltips used in lessons",
       "since": "2021.2"
     },
     {
-      "key": "Lesson.Tooltip.spanBackground",
+      "key": "Tooltip.Learning.spanBackground",
       "description": "Background for buttons and shortcuts used in lesson tooltips",
       "since": "2021.2"
     },
     {
-      "key": "Lesson.Tooltip.spanForeground",
+      "key": "Tooltip.Learning.spanForeground",
       "description": "Foreground for buttons and shortcuts used in lesson tooltips",
       "since": "2021.2"
     },
     {
-      "key": "Lesson.Tooltip.foreground",
+      "key": "Tooltip.Learning.foreground",
       "description": "Foreground for tooltips text used in lessons",
       "since": "2021.2"
     },
     {
-      "key": "Lesson.Tooltip.stepNumberForeground",
+      "key": "Tooltip.Learning.stepNumberForeground",
       "description": "Foreground for task numbers in lesson tooltips",
       "since": "2021.2"
     },

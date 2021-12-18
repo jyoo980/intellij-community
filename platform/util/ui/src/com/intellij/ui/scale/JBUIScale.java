@@ -37,7 +37,7 @@ public final class JBUIScale {
   private static final float DISCRETE_SCALE_RESOLUTION = 0.25f;
 
   @SuppressWarnings("StaticNonFinalField")
-  public static float DEF_SYSTEM_FONT_SIZE = 12f;
+  public static float DEF_SYSTEM_FONT_SIZE = SystemInfo.isMac? 13f : 12f;
 
   public static void addUserScaleChangeListener(@NotNull PropertyChangeListener listener) {
     PROPERTY_CHANGE_SUPPORT.addPropertyChangeListener(USER_SCALE_FACTOR_PROPERTY, listener);
@@ -55,6 +55,10 @@ public final class JBUIScale {
     Map.Entry<String, Integer > result = systemFontData;
     if (result != null) {
       return result;
+    }
+
+    if (GraphicsEnvironment.isHeadless()) {
+      return systemFontData = Map.entry("Dialog", 12);
     }
 
     // with JB Linux JDK the label font comes properly scaled based on Xft.dpi settings.

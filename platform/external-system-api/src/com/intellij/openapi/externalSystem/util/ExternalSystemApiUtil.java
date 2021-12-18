@@ -1,15 +1,17 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.externalSystem.util;
 
 import com.intellij.execution.rmi.RemoteUtil;
 import com.intellij.ide.highlighter.ArchiveFileType;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.*;
+import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.externalSystem.ExternalSystemAutoImportAware;
 import com.intellij.openapi.externalSystem.ExternalSystemManager;
 import com.intellij.openapi.externalSystem.ExternalSystemModulePropertyManager;
 import com.intellij.openapi.externalSystem.ExternalSystemUiAware;
 import com.intellij.openapi.externalSystem.model.*;
+import com.intellij.openapi.externalSystem.model.project.ExternalSystemSourceType;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
 import com.intellij.openapi.externalSystem.model.project.ModuleData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
@@ -53,12 +55,9 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
-/**
- * @author Denis Zhdanov
- */
 public final class ExternalSystemApiUtil {
-
   @NotNull public static final String PATH_SEPARATOR = "/";
 
   @NotNull public static final Comparator<Object> ORDER_AWARE_COMPARATOR = new Comparator<>() {
@@ -279,13 +278,13 @@ public final class ExternalSystemApiUtil {
   }
 
   @NotNull
-  public static <T> Collection<DataNode<T>> findAllRecursively(@Nullable final DataNode<?> node,
-                                                               @NotNull final Key<T> key) {
-    if (node == null) return Collections.emptyList();
+  public static <T> Collection<DataNode<T>> findAllRecursively(@Nullable DataNode<?> node, @NotNull Key<T> key) {
+    if (node == null) {
+      return Collections.emptyList();
+    }
 
-    final Collection<DataNode<?>> nodes = findAllRecursively(node.getChildren(), node1 -> node1.getKey().equals(key));
     //noinspection unchecked
-    return new SmartList(nodes);
+    return (Collection)findAllRecursively(node.getChildren(), it -> it.getKey().equals(key));
   }
 
   @NotNull
@@ -295,17 +294,17 @@ public final class ExternalSystemApiUtil {
 
   @NotNull
   public static Collection<DataNode<?>> findAllRecursively(@Nullable DataNode<?> node,
-                                                           @Nullable BooleanFunction<? super DataNode<?>> predicate) {
+                                                           @Nullable Predicate<? super DataNode<?>> predicate) {
     if (node == null) return Collections.emptyList();
     return findAllRecursively(node.getChildren(), predicate);
   }
 
   @NotNull
   public static Collection<DataNode<?>> findAllRecursively(@NotNull Collection<? extends DataNode<?>> nodes,
-                                                           @Nullable BooleanFunction<? super DataNode<?>> predicate) {
-    SmartList<DataNode<?>> result = new SmartList<>();
+                                                           @Nullable Predicate<? super DataNode<?>> predicate) {
+    List<DataNode<?>> result = new ArrayList<>();
     for (DataNode<?> node : nodes) {
-      if (predicate == null || predicate.fun(node)) {
+      if (predicate == null || predicate.test(node)) {
         result.add(node);
       }
     }
@@ -317,7 +316,7 @@ public final class ExternalSystemApiUtil {
 
   @Nullable
   public static DataNode<?> findFirstRecursively(@NotNull DataNode<?> parentNode,
-                                                 @NotNull BooleanFunction<? super DataNode<?>> predicate) {
+                                                 @NotNull Predicate<? super DataNode<?>> predicate) {
     Queue<DataNode<?>> queue = new LinkedList<>();
     queue.add(parentNode);
     return findInQueue(queue, predicate);
@@ -325,16 +324,16 @@ public final class ExternalSystemApiUtil {
 
   @Nullable
   public static DataNode<?> findFirstRecursively(@NotNull Collection<? extends DataNode<?>> nodes,
-                                                 @NotNull BooleanFunction<? super DataNode<?>> predicate) {
+                                                 @NotNull Predicate<? super DataNode<?>> predicate) {
     return findInQueue(new LinkedList<>(nodes), predicate);
   }
 
   @Nullable
   private static DataNode<?> findInQueue(@NotNull Queue<DataNode<?>> queue,
-                                         @NotNull BooleanFunction<? super DataNode<?>> predicate) {
+                                         @NotNull Predicate<? super DataNode<?>> predicate) {
     while (!queue.isEmpty()) {
       DataNode<?> node = queue.remove();
-      if (predicate.fun(node)) {
+      if (predicate.test(node)) {
         return node;
       }
       queue.addAll(node.getChildren());
@@ -655,6 +654,32 @@ public final class ExternalSystemApiUtil {
   @Contract(pure = true)
   public static String getExternalProjectGroup(@Nullable Module module) {
     return module != null && !module.isDisposed() ? ExternalSystemModulePropertyManager.getInstance(module).getExternalModuleGroup() : null;
+  }
+
+  private static final ExtensionPointName<ExternalSystemContentRootContributor> ExternalSystemContentRootContributorEP =
+    ExtensionPointName.create("com.intellij.externalSystemContentRootContributor");
+
+  @Contract(pure = true)
+  public static @Nullable Collection<ExternalSystemContentRootContributor.@NotNull ExternalContentRoot> getExternalProjectContentRoots(
+    @NotNull Module module,
+    @NotNull Collection<@NotNull ExternalSystemSourceType> sourceTypes
+  ) {
+    if (module.isDisposed()) return null;
+    String systemId = ExternalSystemModulePropertyManager.getInstance(module).getExternalSystemId();
+    if (systemId == null) return null;
+    ExternalSystemContentRootContributor contributor =
+      ExternalSystemContentRootContributorEP.findFirstSafe((c) -> c.isApplicable(systemId));
+
+    if (contributor == null) return null;
+    return contributor.findContentRoots(module, sourceTypes);
+  }
+
+  @Contract(pure = true)
+  public static @Nullable Collection<ExternalSystemContentRootContributor.@NotNull ExternalContentRoot> getExternalProjectContentRoots(
+    @NotNull Module module,
+    @NotNull ExternalSystemSourceType sourceType
+  ) {
+    return getExternalProjectContentRoots(module, List.of(sourceType));
   }
 
   @Nullable

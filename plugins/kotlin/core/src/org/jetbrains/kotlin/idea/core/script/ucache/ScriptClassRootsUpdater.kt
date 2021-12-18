@@ -7,10 +7,11 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.util.BackgroundTaskUtil
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.project.ProjectManagerListener
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ex.ProjectRootManagerEx
 import com.intellij.openapi.util.Disposer
@@ -74,6 +75,15 @@ abstract class ScriptClassRootsUpdater(
     private val cache: AtomicReference<ScriptClassRootsCache> = AtomicReference(ScriptClassRootsCache.EMPTY)
 
     init {
+        ProjectManager.getInstance().addProjectManagerListener(project, object : ProjectManagerListener {
+            override fun projectClosing(project: Project) {
+                scheduledUpdate?.apply {
+                    cancel()
+                    awaitCompletion()
+                }
+            }
+        })
+
         ensureUpdateScheduled()
     }
 
@@ -159,14 +169,15 @@ abstract class ScriptClassRootsUpdater(
         }
     }
 
-    private var scheduledUpdate: ProgressIndicator? = null
+    private var scheduledUpdate: BackgroundTaskUtil.BackgroundTask? = null
 
     private fun ensureUpdateScheduled() {
+        val disposable = KotlinPluginDisposable.getInstance(project)
         lock.withLock {
             scheduledUpdate?.cancel()
-            val disposable = KotlinPluginDisposable.getInstance(project)
+
             if (!Disposer.isDisposed(disposable)) {
-                scheduledUpdate = BackgroundTaskUtil.executeOnPooledThread(disposable) {
+                scheduledUpdate = BackgroundTaskUtil.submitTask(disposable) {
                     doUpdate()
                 }
             }
@@ -181,6 +192,7 @@ abstract class ScriptClassRootsUpdater(
     }
 
     private fun doUpdate(underProgressManager: Boolean = true) {
+        val disposable = KotlinPluginDisposable.getInstance(project)
         try {
             val updates = recreateRootsCacheAndDiff()
 
@@ -190,14 +202,13 @@ abstract class ScriptClassRootsUpdater(
                 ProgressManager.checkCanceled()
             }
 
-            if (project.isDisposed) return
+            if (Disposer.isDisposed(disposable)) return
 
             if (updates.hasNewRoots) {
                 notifyRootsChanged()
             }
 
-            PsiElementFinder.EP.findExtensionOrFail(KotlinScriptDependenciesClassFinder::class.java, project)
-                .clearCache()
+            PsiElementFinder.EP.findExtensionOrFail(KotlinScriptDependenciesClassFinder::class.java, project).clearCache()
 
             ScriptDependenciesModificationTracker.getInstance(project).incModificationCount()
 

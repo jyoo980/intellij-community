@@ -384,7 +384,7 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
 
     Window window = getWindow();
     if (window instanceof JDialog && !((JDialog)window).isUndecorated() && rootPane != null) {
-      UIUtil.setCustomTitleBar(window, rootPane, runnable -> Disposer.register(myWrapper.getDisposable(), () -> runnable.run()));
+      UIUtil.setTransparentTitleBar(window, rootPane, runnable -> Disposer.register(myWrapper.getDisposable(), () -> runnable.run()));
     }
 
     Container contentPane = getContentPane();
@@ -413,9 +413,10 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
     boolean perProjectModality = Registry.is("ide.perProjectModality", false);
     if (changeModalityState) {
       commandProcessor.enterModal();
-      if (perProjectModality) {
+      if (perProjectModality && project != null) {
         LaterInvocator.enterModal(project, myDialog.getWindow());
-      } else {
+      }
+      else {
         LaterInvocator.enterModal(myDialog);
       }
     }

@@ -42,6 +42,9 @@ class WslTargetEnvironment constructor(override val request: WslTargetEnvironmen
       if (targetRoot != null) {
         myUploadVolumes[uploadRoot] = Volume(uploadRoot.localRootPath, targetRoot)
       }
+      else {
+        LOG.error("Cannot register upload volume: WSL path not found for local path: " + uploadRoot.localRootPath)
+      }
     }
     for (downloadRoot in request.downloadVolumes) {
       val localRootPath = downloadRoot.localRootPath ?: FileUtil.createTempDirectory("intellij-target.", "").toPath()
@@ -99,15 +102,14 @@ class WslTargetEnvironment constructor(override val request: WslTargetEnvironmen
   override fun createProcess(commandLine: TargetedCommandLine, indicator: ProgressIndicator): Process {
     val ptyOptions = request.ptyOptions
     val generalCommandLine = if (ptyOptions != null) {
-      PtyCommandLine(commandLine.collectCommandsSynchronously()).also {
-        it.withOptions(ptyOptions)
-      }
+      PtyCommandLine(commandLine.collectCommandsSynchronously()).withOptions(ptyOptions)
     }
     else {
       GeneralCommandLine(commandLine.collectCommandsSynchronously())
     }
     generalCommandLine.environment.putAll(commandLine.environmentVariables)
     request.wslOptions.remoteWorkingDirectory = commandLine.workingDirectory
+    generalCommandLine.withRedirectErrorStream(commandLine.isRedirectErrorStream)
     distribution.patchCommandLine(generalCommandLine, null, request.wslOptions)
     return generalCommandLine.createProcess()
   }

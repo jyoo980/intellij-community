@@ -10,10 +10,7 @@ import com.intellij.ide.util.frameworkSupport.FrameworkSupportUtil;
 import com.intellij.ide.util.newProjectWizard.*;
 import com.intellij.ide.util.newProjectWizard.impl.FrameworkSupportModelBase;
 import com.intellij.ide.util.projectWizard.*;
-import com.intellij.ide.wizard.CommitStepException;
-import com.intellij.ide.wizard.NewEmptyProjectBuilder;
-import com.intellij.ide.wizard.NewModuleBuilder;
-import com.intellij.ide.wizard.NewProjectBuilder;
+import com.intellij.ide.wizard.*;
 import com.intellij.internal.statistic.eventLog.FeatureUsageData;
 import com.intellij.internal.statistic.service.fus.collectors.FUCounterUsageLogger;
 import com.intellij.internal.statistic.utils.PluginInfoDetectorKt;
@@ -38,6 +35,7 @@ import com.intellij.openapi.ui.popup.ListItemDescriptorAdapter;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.platform.ProjectTemplate;
 import com.intellij.platform.ProjectTemplateEP;
 import com.intellij.platform.ProjectTemplatesFactory;
@@ -57,7 +55,6 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.Convertor;
 import com.intellij.util.containers.FactoryMap;
 import com.intellij.util.containers.MultiMap;
-import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.UiNotifyConnector;
@@ -94,8 +91,8 @@ public final class ProjectTypeStep extends ModuleWizardStep implements SettingsS
   private final AddSupportForFrameworksPanel myFrameworksPanel;
   private final ModuleBuilder.ModuleConfigurationUpdater myConfigurationUpdater;
   private final Map<ProjectTemplate, ModuleBuilder> myBuilders = FactoryMap.create(key -> (ModuleBuilder)key.createModuleBuilder());
+  private final MultiMap<TemplatesGroup, ProjectTemplate> myTemplatesMap;
   private final Map<String, ModuleWizardStep> myCustomSteps = new HashMap<>();
-  private final MultiMap<TemplatesGroup,ProjectTemplate> myTemplatesMap;
   private JPanel myPanel;
   private JPanel myOptionsPanel;
   private JBList<TemplatesGroup> myProjectTypeList;
@@ -375,14 +372,8 @@ public final class ProjectTypeStep extends ModuleWizardStep implements SettingsS
 
     if (isNewWizard()) {
       if (context.isCreatingNewProject()) {
-        EmptyModuleBuilder emptyModuleBuilder = new EmptyModuleBuilder(){
-          @Override
-          public Icon getNodeIcon() {
-            return EmptyIcon.ICON_0;
-          }
-        };
         groups.add(0, new TemplatesGroup(new NewEmptyProjectBuilder()));
-        groups.add(0, new TemplatesGroup(emptyModuleBuilder));
+        groups.add(0, new TemplatesGroup(new NewMultiModuleProjectBuilder()));
         groups.add(0, new TemplatesGroup(new NewProjectBuilder()));
         groups.addAll(getUserTemplatesMap(context));
       }
@@ -418,9 +409,7 @@ public final class ProjectTypeStep extends ModuleWizardStep implements SettingsS
     mySettingsStep = null;
     myHeaderPanel.removeAll();
     if (groupModuleBuilder != null && groupModuleBuilder.getModuleType() != null) {
-      if (!isNewWizard()) {
-        mySettingsStep = groupModuleBuilder.modifyProjectTypeStep(this);
-      }
+      mySettingsStep = groupModuleBuilder.modifyProjectTypeStep(this);
     }
 
     if (groupModuleBuilder == null || (!isNewWizard() && groupModuleBuilder.isTemplateBased())) {
@@ -501,28 +490,33 @@ public final class ProjectTypeStep extends ModuleWizardStep implements SettingsS
   private boolean showCustomOptions(@NotNull ModuleBuilder builder) {
     String card = builder.getBuilderId();
 
-    ModuleWizardStep customStep;
-    if (!myCustomSteps.containsKey(card)) {
-      ModuleWizardStep step = builder.getCustomOptionsStep(myContext, this);
+    ModuleWizardStep step = myCustomSteps.get(card);
+    if (step == null) {
+      step = builder.getCustomOptionsStep(myContext, this);
       if (isNewWizard() && builder instanceof TemplateModuleBuilder) {
         step = new ProjectSettingsStep(myContext);
         myContext.setProjectBuilder(builder);
         NewProjectWizardCollector.logCustomTemplateSelected(myContext);
       }
+
       if (step == null) return false;
+
+      myContext.setProjectBuilder(builder);
       step.updateStep();
-      myCustomSteps.put(card, step);
       myOptionsPanel.add(step.getComponent(), card);
-      customStep = step;
-    } else {
-      customStep = myCustomSteps.get(card);
+
+      myCustomSteps.put(card, step);
+    }
+
+    var preferredFocusedComponent = step.getPreferredFocusedComponent();
+    if (preferredFocusedComponent != null) {
+      requestFocusTo(preferredFocusedComponent);
     }
 
     try {
-      if (customStep != null) {
-        customStep._init();
-      }
-    } catch (Throwable e) {
+      step._init();
+    }
+    catch (Throwable e) {
       LOG.error(e);
     }
 
@@ -533,13 +527,20 @@ public final class ProjectTypeStep extends ModuleWizardStep implements SettingsS
     return true;
   }
 
+  private static void requestFocusTo(@NotNull JComponent component) {
+    UiNotifyConnector.doWhenFirstShown(component, () -> {
+      final IdeFocusManager focusManager = IdeFocusManager.findInstanceByComponent(component);
+      focusManager.requestFocus(component, false);
+    });
+  }
+
   @TestOnly
   public ModuleWizardStep getFrameworksStep() {
     return getCustomStep();
   }
 
   @Nullable
-  private ModuleWizardStep getCustomStep() {
+  public ModuleWizardStep getCustomStep() {
     return myCustomSteps.get(myCurrentCard);
   }
 

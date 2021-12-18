@@ -22,7 +22,6 @@ import org.languagetool.Tag
 import org.languagetool.rules.CategoryId
 import org.languagetool.rules.IncorrectExample
 import org.languagetool.rules.spelling.hunspell.Hunspell
-import java.net.Authenticator
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -72,7 +71,7 @@ object LangTool : GrazieStateLifecycle {
   internal fun createTool(lang: Lang, state: GrazieConfig.State): JLanguageTool {
     val jLanguage = lang.jLanguage
     require(jLanguage != null) { "Trying to get LangTool for not available language" }
-    return JLanguageTool(jLanguage, null, ResultCache(1_000)).apply {
+    return JLanguageTool(jLanguage, null, ResultCache(10_000)).apply {
       setCheckCancelledCallback { ProgressManager.checkCanceled(); false }
       addMatchFilter(UppercaseMatchFilter())
 
@@ -131,9 +130,7 @@ object LangTool : GrazieStateLifecycle {
         rule.incorrectExamples = removeVerySimilarExamples(rule.incorrectExamples)
       }
 
-      //Fix problem with Authenticator installed by LT
       this.language.disambiguator
-      Authenticator.setDefault(null)
     }
   }
 

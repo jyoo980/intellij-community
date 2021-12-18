@@ -108,7 +108,6 @@
     },
 
     "BigSpinner.background": "panel",
-    "BookmarkIcon.background": "#F7C777",
 
     "Borders": {
       "color": "border",
@@ -369,10 +368,13 @@
       "maxGutterIconWidth": 18
     },
 
-    "BookmarkMnemonicIcon": {
-      "background": "#FEF7EC",
-      "borderColor": "#F4AF3D",
-      "foreground": "foreground"
+    "Bookmark": {
+      "iconBackground": "#F7C777",
+      "Mnemonic": {
+        "iconForeground": "foreground",
+        "iconBackground": "#FEF7EC",
+        "iconBorderColor": "#F4AF3D"
+      }
     },
 
     "NavBar.borderColor": "border",
@@ -606,6 +608,7 @@
     },
 
     "SearchField.errorBackground": "#ffcccc",
+    "SearchField.errorForeground": "#ff0000",
 
     "SearchMatch.endBackground": "#ffd042b3",
     "SearchMatch.startBackground": "#ffd042b3",
@@ -753,6 +756,7 @@
     "TitlePane": {
       "background": "panel",
       "Button.hoverBackground": "#00000019",
+      "Button.preferredSize": "47,28",
       "inactiveBackground": "panel",
       "inactiveInfoForeground": "grey04",
       "infoForeground": "grey01"
@@ -898,9 +902,31 @@
       "UI": "com.intellij.ide.ui.laf.darcula.ui.ToolbarComboWidgetUI"
     },
 
+    "MainToolbar": {
+      "background": "#f2f2f2",
+      "icon.borderInsets": "10,10,10,10",
+      "dropdown.borderInsets": "12,6,12,6"
+    },
+
     "Tag": {
       "background": "#dfdfdf"
     },
-    "textInactiveText" : "#808080"
+    "textInactiveText" : "#808080",
+
+    "Lesson": {
+      "shortcutBackground": "#E6EEF7",
+      "stepNumberForeground": "#808080",
+      "Badge.newLessonBackground": "#62B543",
+      "Badge.newLessonForeground": "#FFFFFF"
+    },
+
+    "Tooltip.Learning": {
+      "background": "#1071E8",
+      "borderColor": "#1071E8",
+      "spanBackground": "#0D5CBD",
+      "spanForeground": "#F5F5F5",
+      "foreground": "#F5F5F5",
+      "stepNumberForeground": "#6CA6ED"
+    }
   }
 }

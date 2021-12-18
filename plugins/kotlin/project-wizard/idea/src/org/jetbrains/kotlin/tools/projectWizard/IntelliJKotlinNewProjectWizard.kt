@@ -11,8 +11,10 @@ import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.projectRoots.SdkTypeId
 import com.intellij.openapi.projectRoots.impl.DependentSdkType
 import com.intellij.openapi.roots.ui.configuration.sdkComboBox
+import com.intellij.openapi.util.Disposer
 import com.intellij.ui.dsl.builder.COLUMNS_MEDIUM
 import com.intellij.ui.dsl.builder.Panel
+import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.util.io.systemIndependentPath
 import org.jetbrains.kotlin.tools.projectWizard.plugins.buildSystem.BuildSystemType
@@ -37,11 +39,13 @@ internal class IntelliJKotlinNewProjectWizard : BuildSystemKotlinNewProjectWizar
                     sdkComboBox(context, sdkProperty, StdModuleTypes.JAVA.id, sdkTypeFilter)
                         .columns(COLUMNS_MEDIUM)
                 }
-                collapsibleGroup(KotlinNewProjectWizardUIBundle.message("additional.buildsystem.settings.kotlin.advanced"), topGroupGap = true) {
+                collapsibleGroup(KotlinNewProjectWizardUIBundle.message("additional.buildsystem.settings.kotlin.advanced")) {
                     row("${KotlinNewProjectWizardUIBundle.message("additional.buildsystem.settings.kotlin.runtime")}:") {
-                        cell(wizardBuilder.wizard.jpsData.libraryOptionsPanel.simplePanel)
+                        val libraryOptionsPanel = wizardBuilder.wizard.jpsData.libraryOptionsPanel
+                        Disposer.register(context.disposable, libraryOptionsPanel)
+                        cell(libraryOptionsPanel.simplePanel)
                     }
-                }
+                }.topGap(TopGap.MEDIUM)
             }
         }
 

@@ -3,21 +3,20 @@ package com.jetbrains.python.sdk.add.target
 
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.target.TargetEnvironmentConfiguration
+import com.intellij.execution.target.fixHighlightingOfUiDslComponents
 import com.intellij.execution.target.joinTargetPaths
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.module.Module
-import com.intellij.openapi.module.ModuleUtil
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.projectRoots.impl.SdkConfigurationUtil
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
+import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.openapi.util.UserDataHolder
 import com.intellij.openapi.util.io.FileUtil
-import com.intellij.openapi.vfs.StandardFileSystems
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.layout.*
 import com.intellij.util.PathUtil
@@ -119,14 +118,25 @@ class PyAddVirtualEnvPanel constructor(project: Project?,
           ?.also { projectSync -> projectSync.extendDialogPanelWithOptionalFields(this) }
       }
     }
+
+    // workarounds the issue with cropping the focus highlighting
+    panel.fixHighlightingOfUiDslComponents()
+
     add(panel, BorderLayout.NORTH)
 
     if (targetEnvironmentConfiguration.isLocal()) {
       // asynchronously fill the combobox
-      addInterpretersAsync(interpreterCombobox) {
-        detectVirtualEnvs(module, existingSdks, context)
-          .filterNot { it.isAssociatedWithAnotherModule(module) }
-      }
+      addInterpretersAsync(
+        interpreterCombobox,
+        sdkObtainer = {
+          detectVirtualEnvs(module, existingSdks, context)
+            .filterNot { it.isAssociatedWithAnotherModule(module) }
+        },
+        onAdded = { sdks ->
+          val associatedVirtualEnv = sdks.find { it.isAssociatedWithModule(module) }
+          associatedVirtualEnv?.let { interpreterCombobox.selectedSdk = associatedVirtualEnv }
+        }
+      )
       addBaseInterpretersAsync(baseInterpreterCombobox, existingSdks, module, context)
     }
     else {
@@ -137,6 +147,16 @@ class PyAddVirtualEnvPanel constructor(project: Project?,
       }
     }
   }
+
+  override fun validateAll(): List<ValidationInfo> =
+    if (isUnderLocalTarget) {
+      when (interpreterCombobox.selectedItem) {
+        is NewPySdkComboBoxItem -> listOfNotNull(validateEnvironmentDirectoryLocation(locationField),
+                                                 validateSdkComboBox(baseInterpreterCombobox, this))
+        else -> listOfNotNull(validateSdkComboBox(interpreterCombobox, this))
+      }
+    }
+    else emptyList()
 
   override fun getOrCreateSdk(): Sdk? =
     getOrCreateSdk(targetEnvironmentConfiguration = null)
@@ -204,7 +224,7 @@ class PyAddVirtualEnvPanel constructor(project: Project?,
     if (!shared) {
       sdk.associateWithModule(module, newProjectPath)
     }
-    moduleToExcludeSdkFrom(root, project)?.excludeInnerVirtualEnv(sdk)
+    project.excludeInnerVirtualEnv(sdk)
     PySdkSettings.instance.onVirtualEnvCreated(baseSdk, FileUtil.toSystemIndependentName(root), projectBasePath)
     return sdk
   }
@@ -224,16 +244,6 @@ class PyAddVirtualEnvPanel constructor(project: Project?,
       val homePath = selectedSdk.homePath!!
       return createSdkForTarget(project, targetEnvironmentConfiguration, homePath, existingSdks)
     }
-  }
-
-  private fun moduleToExcludeSdkFrom(path: String, project: Project?): Module? {
-    val possibleProjects = if (project != null) listOf(project) else ProjectManager.getInstance().openProjects.asList()
-    val rootFile = StandardFileSystems.local().refreshAndFindFileByPath(path) ?: return null
-    return possibleProjects
-      .asSequence()
-      .map { ModuleUtil.findModuleForFile(rootFile, it) }
-      .filterNotNull()
-      .firstOrNull()
   }
 
   private fun applyOptionalProjectSyncConfiguration(targetConfiguration: TargetEnvironmentConfiguration?) {

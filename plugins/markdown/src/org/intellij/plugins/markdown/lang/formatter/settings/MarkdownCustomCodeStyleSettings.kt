@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.intellij.plugins.markdown.lang.formatter.settings
 
 import com.intellij.psi.codeStyle.CodeStyleSettings
@@ -40,4 +40,16 @@ class MarkdownCustomCodeStyleSettings(settings: CodeStyleSettings) : CustomCodeS
 
   @JvmField
   var FORCE_ONE_SPACE_AFTER_BLOCKQUOTE_SYMBOL: Boolean = true
+
+  @JvmField
+  var WRAP_TEXT_IF_LONG = true
+
+  @JvmField
+  var KEEP_LINE_BREAKS_INSIDE_TEXT_BLOCKS = true
+
+  @JvmField
+  var WRAP_TEXT_INSIDE_BLOCKQUOTES = true
+
+  @JvmField
+  var INSERT_QUOTE_ARROWS_ON_WRAP = true
 }

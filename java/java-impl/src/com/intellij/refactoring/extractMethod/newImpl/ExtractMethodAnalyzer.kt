@@ -74,7 +74,8 @@ fun findExtractOptions(elements: List<PsiElement>): ExtractOptions {
     .map { it.copy(type = normalizeType(it.type)) }
   val parameterNames = inputParameters.map { it.name }.toSet()
 
-  val exposedVariables = analyzer.findExposedLocalDeclarations()
+  val outputVariable = (dataOutput as? VariableOutput)?.variable
+  val exposedVariables = analyzer.findExposedLocalDeclarations().filter { exposedVariable -> exposedVariable != outputVariable }
 
   extractOptions = extractOptions.copy(
     dataOutput = normalizeDataOutput(dataOutput, flowOutput, elements, exposedVariables.mapNotNull { it.name }),
@@ -183,12 +184,12 @@ private fun findOutputFromReturn(returnStatements: List<PsiStatement>): Expressi
   return ExpressionOutput(returnType, variableName, returnExpressions, nullability)
 }
 
-private fun findFlowData(analyzer: CodeFragmentAnalyzer, flowOutput: FlowOutput): DataOutput? {
+private fun findFlowData(analyzer: CodeFragmentAnalyzer, flowOutput: FlowOutput): DataOutput {
   val returnOutput = findOutputFromReturn(flowOutput.statements)
   return when (flowOutput) {
     is ConditionalFlow -> when {
       returnOutput?.nullability == Nullability.NOT_NULL && returnOutput.type != PsiType.BOOLEAN -> returnOutput.copy(nullability = Nullability.NULLABLE)
-      ExtractMethodHelper.areSame(flowOutput.statements) && analyzer.findExposedLocalVariables(returnOutput?.returnExpressions.orEmpty()).isEmpty() ->
+      ExtractMethodHelper.areSame(flowOutput.statements) && !ExtractMethodHelper.hasReferencesToScope(analyzer.elements, returnOutput?.returnExpressions.orEmpty()) ->
         ArtificialBooleanOutput
       else -> throw ExtractException(JavaRefactoringBundle.message("extract.method.error.many.exits"), analyzer.elements.first())
     }

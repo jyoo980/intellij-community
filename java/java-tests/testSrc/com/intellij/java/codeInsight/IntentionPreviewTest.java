@@ -4,8 +4,10 @@ package com.intellij.java.codeInsight;
 import com.intellij.codeInsight.daemon.quickFix.LightQuickFixTestCase;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.impl.preview.IntentionPreviewPopupUpdateProcessor;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInsight.template.TemplateManager;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import org.intellij.lang.regexp.inspection.DuplicateCharacterInClassInspection;
 
@@ -21,10 +23,11 @@ public class IntentionPreviewTest extends LightQuickFixTestCase {
                           "}");
     IntentionAction action = findActionWithText("Split into declaration and assignment");
     assertNotNull(action);
-    String text = IntentionPreviewPopupUpdateProcessor.Companion.getPreviewText(getProject(), action, getFile(), getEditor());
+    String text = IntentionPreviewPopupUpdateProcessor.getPreviewText(getProject(), action, getFile(), getEditor());
     assertEquals("class Test {\n" +
                  "  public void test() {\n" +
-                 "    int variable  ;variable = 2;\n" +
+                 "    int variable  ;\n" +
+                 "      variable = 2;\n" +
                  "  }\n" +
                  "}", text);
   }
@@ -38,8 +41,10 @@ public class IntentionPreviewTest extends LightQuickFixTestCase {
                           "  }");
     IntentionAction action = findActionWithText("Add on-demand static import for 'java.lang.Math'");
     assertNotNull(action);
-    String text = IntentionPreviewPopupUpdateProcessor.Companion.getPreviewText(getProject(), action, getFile(), getEditor());
-    assertEquals("import static java.lang.Math.*;class Computer {\n" +
+    String text = IntentionPreviewPopupUpdateProcessor.getPreviewText(getProject(), action, getFile(), getEditor());
+    assertEquals("import static java.lang.Math.*;\n" +
+                 "\n" +
+                 "class Computer {\n" +
                  "    void f() {\n" +
                  "      double pi = PI;\n" +
                  "    }\n" +
@@ -82,6 +87,61 @@ public class IntentionPreviewTest extends LightQuickFixTestCase {
     assertEquals("[\"123]", text);
   }
 
+  public void testBindFieldsFromParameters() {
+    configureFromFileText("Test.java",
+                          "public    class    Test {\n" +
+                          "    Test(int <caret>a, String b) {\n" +
+                          "\n" +
+                          "    }\n" +
+                          "}\n");
+    IntentionAction action = findActionWithText("Bind constructor parameters to fields");
+    assertNotNull(action);
+    String text = getPreviewText(action);
+    assertEquals("public    class    Test {\n" +
+                 "    private final int a;\n" +
+                 "    private final String b;\n" +
+                 "\n" +
+                 "    Test(int a, String b) {\n" +
+                 "\n" +
+                 "    this.a = a;\n" +
+                 "        this.b = b;\n" +
+                 "    }\n" +
+                 "}\n", text);
+  }
+
+  public void testDefineDefaultValues() {
+    configureFromFileText("Test.java",
+                          "public class Test {\n" +
+                          "    void test(int <caret>a,  String b) {\n" +
+                          "\n" +
+                          "    }\n" +
+                          "}\n");
+    IntentionAction action = findActionWithText("Generate overloaded method with default parameter values");
+    assertNotNull(action);
+    String text = getPreviewText(action);
+    assertEquals("public class Test {\n" +
+                 "    void test() {\n" +
+                 "        test(0, null);\n" +
+                 "    }\n" +
+                 "\n" +
+                 "    void test(int a, String b) {\n" +
+                 "\n" +
+                 "    }\n" +
+                 "}\n", text);
+  }
+
+  public void testRenameFile() {
+    configureFromFileText("Test.java", "public class <caret>Best {}");
+    IntentionAction action = findActionWithText("Rename File");
+    assertNotNull(action);
+    IntentionPreviewInfo info = IntentionPreviewPopupUpdateProcessor.getPreviewInfo(getProject(), action, getFile(), getEditor());
+    assertTrue(info instanceof IntentionPreviewInfo.Html);
+    HtmlChunk content = ((IntentionPreviewInfo.Html)info).content();
+    assertEquals("<icon src=\"file\"/>&nbsp;Test.java &rarr; <icon src=\"file\"/>&nbsp;Best.java",
+                 content.toString());
+    assertNotNull(((IntentionPreviewInfo.Html)info).icon("file"));
+  }
+
   @Override
   protected void setupEditorForInjectedLanguage() {
     // we want to stay at host editor
@@ -90,7 +150,7 @@ public class IntentionPreviewTest extends LightQuickFixTestCase {
   private String getPreviewText(IntentionAction action) {
     // Run in background thread to catch accidental write-actions during preview generation
     try {
-      return ReadAction.nonBlocking(() -> IntentionPreviewPopupUpdateProcessor.Companion.getPreviewText(getProject(), action, getFile(), getEditor()))
+      return ReadAction.nonBlocking(() -> IntentionPreviewPopupUpdateProcessor.getPreviewText(getProject(), action, getFile(), getEditor()))
         .submit(AppExecutorUtil.getAppExecutorService()).get();
     }
     catch (InterruptedException | ExecutionException e) {

@@ -90,6 +90,34 @@ public final class IconLoader {
 
   private IconLoader() {}
 
+  @ApiStatus.Internal
+  public static Icon loadCustomVersionOrScale(@NotNull ScalableIcon icon, float size) {
+    if (icon.getIconWidth() == size) return icon;
+
+    Icon cachedIcon = icon;
+    if (cachedIcon instanceof RetrievableIcon) {
+      cachedIcon = ((RetrievableIcon)icon).retrieveIcon();
+    }
+    if (cachedIcon instanceof CachedImageIcon) {
+      String suffix = "@" + (int)size + "x" + (int)size + ".svg";
+      ImageDataLoader resolver = ((CachedImageIcon)cachedIcon).resolver;
+      URL url = resolver == null ? null : resolver.getURL();
+      if (url != null) {
+        try {
+          URL newUrl = new URL(url.toString().replace(".svg", suffix));
+          Icon newIcon = findIcon(newUrl);
+          if (newIcon instanceof CachedImageIcon && newIcon.getIconWidth() == size) {
+            return newIcon;
+          }
+        }
+        catch (MalformedURLException e) {
+        }
+      }
+    }
+
+    return icon.scale(size / icon.getIconWidth());
+  }
+
   @TestOnly
   public static <T> T performStrictly(@NotNull Supplier<? extends T> computable) {
     STRICT_LOCAL.set(true);
@@ -727,7 +755,7 @@ public final class IconLoader {
     public final void paintIcon(Component c, Graphics g, int x, int y) {
       Graphics2D g2d = g instanceof Graphics2D ? (Graphics2D)g : null;
       ScaleContext scaleContext = ScaleContext.create(g2d);
-      if (SVGLoader.isSelectionContext()) {
+      if (SVGLoader.isColorRedefinitionContext()) {
         ImageIcon result = null;
         synchronized (lock) {
           ImageIcon icon = scaledIconCache.getOrScaleIcon(1.0f);
@@ -822,7 +850,7 @@ public final class IconLoader {
 
         ImageIcon icon = scaledIconCache.getOrScaleIcon(1.0f);
         if (icon != null) {
-          if (!SVGLoader.isSelectionContext()) {
+          if (!SVGLoader.isColorRedefinitionContext()) {
             this.realIcon = icon.getIconWidth() < 50 && icon.getIconHeight() < 50 ? icon : new SoftReference<>(icon);
           }
           else {
@@ -997,7 +1025,7 @@ public final class IconLoader {
 
       long cacheKey = key(scaleContext);
       ImageIcon icon = SoftReference.dereference(cache.get(cacheKey));
-      if (icon != null && !SVGLoader.isSelectionContext()) {
+      if (icon != null && !SVGLoader.isColorRedefinitionContext()) {
         return icon;
       }
 

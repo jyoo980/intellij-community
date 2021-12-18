@@ -6,14 +6,16 @@ import com.intellij.execution.process.ProcessAdapter
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.internal.statistic.StructuredIdeActivity
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.util.BuildNumber
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.FileSystemUtil
 import com.intellij.openapi.util.io.FileUtil
-import com.intellij.openapi.util.registry.Registry
 import com.intellij.remoteDev.RemoteDevUtilBundle
 import com.intellij.remoteDev.connection.CodeWithMeSessionInfoProvider
 import com.intellij.remoteDev.connection.StunTurnServerInfo
@@ -30,6 +32,7 @@ import com.jetbrains.infra.pgpVerifier.PgpSignaturesVerifier
 import com.jetbrains.infra.pgpVerifier.PgpSignaturesVerifierLogger
 import com.jetbrains.infra.pgpVerifier.Sha256ChecksumSignatureVerifier
 import com.jetbrains.rd.util.lifetime.Lifetime
+import com.jetbrains.rd.util.reactive.fire
 import com.sun.jna.platform.win32.Kernel32
 import com.sun.jna.platform.win32.WinBase
 import com.sun.jna.platform.win32.WinNT
@@ -55,23 +58,13 @@ object CodeWithMeClientDownloader {
 
   private const val extractDirSuffix = "-ide"
 
-  const val gatewayTestsCwmGuestDownloadLocationProperty = "intellij.cwm.tests.remoteDev.gateway.cwm.guest.download.location"
-  const val gatewayTestsX11DisplayProperty = "intellij.cwm.tests.remoteDev.gateway.x11.display"
-  const val cwmTestsGuestCachesSystemProperty = "codeWithMe.tests.guest.caches.dir"
-  const val DEFAULT_GUEST_CACHES_DIR_NAME = "JetBrainsClientDist"
+  private val config get () = service<JetBrainsClientDownloaderConfigurationProvider>()
 
   private fun isJbrSymlink(file: Path): Boolean = file.name == "jbr" && isSymlink(file)
   private fun isSymlink(file: Path): Boolean = FileSystemUtil.getAttributes(file.toFile())?.isSymLink == true
 
   val cwmGuestManifestFilter: (Path) -> Boolean = { !isJbrSymlink(it) && (!it.isDirectory() || isSymlink(it)) }
   val cwmJbrManifestFilter: (Path) -> Boolean = { !it.isDirectory() || isSymlink(it) }
-
-  private val DEFAULT_CWM_GUEST_DOWNLOAD_LOCATION
-    get() = System.getProperty(gatewayTestsCwmGuestDownloadLocationProperty)?.let { URI(it) }
-            ?: URI("https://cache-redirector.jetbrains.com/download.jetbrains.com/idea/code-with-me/")
-
-  // todo: make it configurable.... for enterprise?
-  private val DEFAULT_JRE_DOWNLOAD_LOCATION = URI("https://cache-redirector.jetbrains.com/download.jetbrains.com/idea/jbr/")
 
   private data class DownloadableFileData(
     val fileName: String,
@@ -91,12 +84,7 @@ object CodeWithMeClientDownloader {
 
   val buildNumberRegex = Regex("""[0-9]{3}\.(([0-9]+(\.[0-9]+)?)|SNAPSHOT)""")
 
-  fun getCwmGuestCachesDir(): Path {
-    return System.getProperty(cwmTestsGuestCachesSystemProperty)?.let { Path.of(it) }
-           ?: (getJetBrainsSystemCachesDir() / DEFAULT_GUEST_CACHES_DIR_NAME)
-  }
-
-  fun getClientDistributionName(clientBuildVersion: String) = when {
+  private fun getClientDistributionName(clientBuildVersion: String) = when {
     VersionComparatorUtil.compare(clientBuildVersion, "211.6167") < 0 -> "IntelliJClient"
     VersionComparatorUtil.compare(clientBuildVersion, "213.5318") < 0 -> "CodeWithMeGuest"
     else -> "JetBrainsClient"
@@ -119,7 +107,7 @@ object CodeWithMeClientDownloader {
 
     val clientDistributionName = getClientDistributionName(clientBuildVersion)
 
-    val clientDownloadUrl = "${DEFAULT_CWM_GUEST_DOWNLOAD_LOCATION}$clientDistributionName-$hostBuildNumber$platformSuffix"
+    val clientDownloadUrl = "${config.clientDownloadLocation}$clientDistributionName-$hostBuildNumber$platformSuffix"
 
     val platformString = when {
       SystemInfo.isLinux -> "linux-x64"
@@ -136,7 +124,7 @@ object CodeWithMeClientDownloader {
 
     val jdkVersion = jreBuildParts[0]
     val jdkBuild = jreBuildParts[1]
-    val jreDownloadUrl = "${DEFAULT_JRE_DOWNLOAD_LOCATION}jbr_jcef-$jdkVersion-$platformString-b${jdkBuild}.tar.gz"
+    val jreDownloadUrl = "${config.jreDownloadLocation}jbr_jcef-$jdkVersion-$platformString-b${jdkBuild}.tar.gz"
 
     val clientName = "$clientDistributionName-$hostBuildNumber"
     val jreName = jreDownloadUrl.substringAfterLast('/').removeSuffix(".tar.gz")
@@ -150,6 +138,7 @@ object CodeWithMeClientDownloader {
       override val compatibleJreUrl = jreDownloadUrl
       override val hostFeaturesToEnable: Set<String>? = null
       override val stunTurnServers: List<StunTurnServerInfo>? = null
+      override val turnAllocationServerInfo: StunTurnServerInfo? = null
       override val downloadPgpPublicKeyUrl: String? = null
     }
 
@@ -169,7 +158,7 @@ object CodeWithMeClientDownloader {
     jdkBuildProgressIndicator.text = RemoteDevUtilBundle.message("thinClientDownloader.checking")
 
     val clientDistributionName = getClientDistributionName(clientBuildVersion)
-    val clientJdkDownloadUrl = "${DEFAULT_CWM_GUEST_DOWNLOAD_LOCATION}$clientDistributionName-$clientBuildVersion-jdk-build.txt"
+    val clientJdkDownloadUrl = "${config.clientDownloadLocation}$clientDistributionName-$clientBuildVersion-jdk-build.txt"
     LOG.info("Downloading from $clientJdkDownloadUrl")
     val jdkBuild = HttpRequests
       .request(clientJdkDownloadUrl)
@@ -187,7 +176,6 @@ object CodeWithMeClientDownloader {
    *
    * Update this method (any jdk-related stuff) together with:
    *  `setupJdk.gradle`
-   *  `setupJbre.gradle`
    *  `org/jetbrains/intellij/build/impl/BundledJreManager.groovy`
    */
   fun downloadClientAndJdk(clientBuildVersion: String,
@@ -222,7 +210,7 @@ object CodeWithMeClientDownloader {
       fileName = guestFileName,
       url = URI(sessionInfoResponse.compatibleClientUrl),
       archivePath = tempDir.resolve(guestFileName),
-      targetPath = getCwmGuestCachesDir() / (guestName + extractDirSuffix),
+      targetPath = config.clientCachesDir / (guestName + extractDirSuffix),
       includeInManifest = cwmGuestManifestFilter
     )
 
@@ -232,7 +220,7 @@ object CodeWithMeClientDownloader {
       fileName = jdkFileName,
       url = URI(sessionInfoResponse.compatibleJreUrl),
       archivePath = tempDir.resolve(jdkFileName),
-      targetPath = getCwmGuestCachesDir() / (jdkFullName + extractDirSuffix),
+      targetPath = config.clientCachesDir / (jdkFullName + extractDirSuffix),
       includeInManifest = cwmJbrManifestFilter
     )
 
@@ -243,8 +231,8 @@ object CodeWithMeClientDownloader {
       else null
 
     fun updateStateText() {
-      val downloadList = dataList.filter { it.status == DownloadableFileState.Downloading }.map { it.fileName }.joinToString(", ")
-      val extractList = dataList.filter { it.status == DownloadableFileState.Extracting }.map { it.fileName }.joinToString(", ")
+      val downloadList = dataList.filter { it.status == DownloadableFileState.Downloading }.joinToString(", ") { it.fileName }
+      val extractList = dataList.filter { it.status == DownloadableFileState.Extracting }.joinToString(", ") { it.fileName }
       progressIndicator.text =
         if (downloadList.isNotBlank() && extractList.isNotBlank()) RemoteDevUtilBundle.message("thinClientDownloader.downloading.and.extracting", downloadList, extractList)
         else if (downloadList.isNotBlank()) RemoteDevUtilBundle.message("thinClientDownloader.downloading", downloadList)
@@ -307,8 +295,8 @@ object CodeWithMeClientDownloader {
 
             download(data.url, data.archivePath)
 
-            if (Registry.`is`("codewithme.check.guest.signature")) {
-              LOG.info("Signature verification is on, preparing for it")
+            LOG.info("Signature verification is ${if (config.verifySignature) "ON" else "OFF"}")
+            if (config.verifySignature) {
               val pgpKeyRingFile = Files.createTempFile(tempDir, "KEYS", "")
               download(URI(sessionInfoResponse.downloadPgpPublicKeyUrl ?: JetBrainsPgpConstants.JETBRAINS_DOWNLOADS_PGP_SUB_KEYS_URL), pgpKeyRingFile)
 
@@ -338,7 +326,7 @@ object CodeWithMeClientDownloader {
           }
           catch (ex: IOException) {
             future.complete(false)
-            LOG.error(ex)
+            LOG.warn(ex)
             return@execute
           }
 
@@ -370,7 +358,7 @@ object CodeWithMeClientDownloader {
         }
         catch (e: Throwable) {
           future.complete(false)
-          LOG.error(e)
+          LOG.warn(e)
         }
         finally {
           synchronized(currentlyDownloading) {
@@ -395,8 +383,12 @@ object CodeWithMeClientDownloader {
         return null
       }
     }
+    catch(e: ProcessCanceledException) {
+      LOG.info("Download was canceled")
+      return null
+    }
     catch (e: Throwable) {
-      LOG.error(e)
+      LOG.warn(e)
       return null
     }
   }
@@ -456,7 +448,7 @@ object CodeWithMeClientDownloader {
         if (SystemInfo.isMac) {
           val app = guestRoot.toFile().listFiles { file -> file.name.endsWith(".app") && file.isDirectory }!!.singleOrNull()
           if (app != null) {
-            return app.toPath() to listOf("open", app.toString(), "--args")
+            return app.toPath() to listOf("open", "-n", "-a", app.toString(), "--args")
           }
         }
 
@@ -474,8 +466,7 @@ object CodeWithMeClientDownloader {
   fun runCwmGuestProcessFromDownload(lifetime: Lifetime,
                                      url: String,
                                      guestRoot: Path,
-                                     jdkRoot: Path,
-                                     patchVmOptions: ((String) -> String)? = null): Lifetime {
+                                     jdkRoot: Path): Lifetime {
     val (executable, fullLauncherCmd) = findLauncherUnderCwmGuestRoot(guestRoot)
     val guestHome = findCwmGuestHome(guestRoot)
 
@@ -490,21 +481,8 @@ object CodeWithMeClientDownloader {
     val parameters = listOf("thinClient", url)
     val processLifetimeDef = lifetime.createNested()
 
-    if (patchVmOptions != null) {
-      val vmOptionsFile = executable.resolveSibling("jetbrains_client64.vmoptions")
-      LOG.info("Patching $vmOptionsFile")
-
-      require(vmOptionsFile.isFile() && vmOptionsFile.exists())
-
-      val originalContent = vmOptionsFile.readText(Charsets.UTF_8)
-      LOG.info("Original .vmoptions=\n$originalContent")
-
-      val patchedContent = patchVmOptions(originalContent)
-      LOG.info("Patched .vmoptions=$patchedContent")
-
-      vmOptionsFile.writeText(patchedContent)
-      LOG.info("Patched $vmOptionsFile successfully")
-    }
+    val vmOptionsFile = executable.resolveSibling("jetbrains_client64.vmoptions")
+    service<JetBrainsClientDownloaderConfigurationProvider>().patchVmOptions(vmOptionsFile)
 
     if (SystemInfo.isWindows) {
       val hProcess = WindowsFileUtil.windowsShellExecute(
@@ -546,11 +524,7 @@ object CodeWithMeClientDownloader {
 
       fun doRunProcess() {
         val commandLine = GeneralCommandLine(fullLauncherCmd + parameters)
-        System.getProperty(gatewayTestsX11DisplayProperty)?.let {
-          require(SystemInfo.isLinux) { "X11 display property makes sense only on Linux" }
-          LOG.info("Setting env var DISPLAY for Guest process=$it")
-          commandLine.environment["DISPLAY"] = it
-        }
+        config.modifyClientCommandLine(commandLine)
 
         LOG.info("Starting JetBrains Client process (attempts left: $attemptCount): ${commandLine}")
 
@@ -589,6 +563,7 @@ object CodeWithMeClientDownloader {
 
         processHandler.addProcessListener(listener)
         processHandler.startNotify()
+        config.clientLaunched.fire()
 
         lifetime.onTerminationOrNow {
           processHandler.process.children().forEach {

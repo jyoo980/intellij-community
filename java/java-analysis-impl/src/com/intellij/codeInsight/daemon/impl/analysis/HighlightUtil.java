@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon.impl.analysis;
 
 import com.intellij.codeInsight.CodeInsightUtilCore;
@@ -29,7 +29,6 @@ import com.intellij.openapi.projectRoots.JavaSdkVersion;
 import com.intellij.openapi.projectRoots.JavaSdkVersionUtil;
 import com.intellij.openapi.roots.impl.FilePropertyPusher;
 import com.intellij.openapi.roots.impl.JavaLanguageLevelPusher;
-import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.HtmlChunk;
@@ -52,8 +51,6 @@ import com.intellij.psi.scope.PatternResolveState;
 import com.intellij.psi.scope.processor.VariablesNotProcessor;
 import com.intellij.psi.scope.util.PsiScopesUtil;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.LocalSearchScope;
-import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.templateLanguages.OuterLanguageElement;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.*;
@@ -455,6 +452,19 @@ public final class HighlightUtil {
     return null;
   }
 
+  @Nullable
+  static HighlightInfo checkVarTypeSelfReferencing(PsiVariable resolved, PsiReferenceExpression ref) {
+    if (PsiTreeUtil.isAncestor(resolved.getInitializer(), ref, false)) {
+      PsiTypeElement typeElement = resolved.getTypeElement();
+      if (typeElement != null && typeElement.isInferredType()) {
+        return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
+          .descriptionAndTooltip(JavaErrorBundle.message("lvti.selfReferenced", resolved.getName()))
+          .range(ref).create();
+      }
+    }
+    return null;
+  }
+  
   static HighlightInfo checkVarTypeApplicability(@NotNull PsiVariable variable) {
     PsiTypeElement typeElement = variable.getTypeElement();
     if (typeElement != null && typeElement.isInferredType()) {
@@ -464,7 +474,17 @@ public final class HighlightUtil {
           String message = JavaErrorBundle.message("lvti.compound");
           return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(message).range(variable).create();
         }
+      }
+    }
+    return null;
+  }
 
+  @Nullable
+  static HighlightInfo checkVarTypeApplicability(PsiTypeElement typeElement) {
+    if (typeElement != null && typeElement.isInferredType()) {
+      PsiElement parent = typeElement.getParent();
+      PsiVariable variable = tryCast(parent, PsiVariable.class);
+      if (variable instanceof PsiLocalVariable) {
         PsiExpression initializer = variable.getInitializer();
         if (initializer == null) {
           String message = JavaErrorBundle.message("lvti.no.initializer");
@@ -482,10 +502,11 @@ public final class HighlightUtil {
         }
 
         PsiType lType = variable.getType();
-        if (PsiType.NULL.equals(lType)) {
-          boolean isSelfReferencing = ReferencesSearch.search(variable, new LocalSearchScope(initializer)).findFirst() != null;
-          String message = JavaErrorBundle.message(isSelfReferencing ? "lvti.selfReferenced" : "lvti.null");
-          return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(message).range(typeElement).create();
+        if (PsiType.NULL.equals(lType) && SyntaxTraverser.psiTraverser(initializer)
+                                            .filter(PsiLiteralExpression.class)
+                                            .find(l -> PsiType.NULL.equals(l.getType())) != null) {
+          return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(JavaErrorBundle.message("lvti.null"))
+            .range(typeElement).create();
         }
         if (PsiType.VOID.equals(lType)) {
           String message = JavaErrorBundle.message("lvti.void");
@@ -2940,7 +2961,7 @@ public final class HighlightUtil {
   @NotNull
   static @NlsSafe HtmlChunk redIfNotMatch(@Nullable PsiType type, boolean matches, boolean shortType) {
     if (type == null) return HtmlChunk.empty();
-    String color = ColorUtil.toHtmlColor(matches ? UIUtil.getToolTipForeground() : DialogWrapper.ERROR_FOREGROUND_COLOR);
+    String color = ColorUtil.toHtmlColor(matches ? UIUtil.getToolTipForeground() : UIUtil.getErrorForeground());
     return HtmlChunk.tag("font").attr("color", color)
       .addText(shortType || type instanceof PsiCapturedWildcardType ? type.getPresentableText() : type.getCanonicalText());
   }
@@ -3065,7 +3086,7 @@ public final class HighlightUtil {
           problem.second.forEach(fix -> QuickFixAction.registerQuickFixAction(info, fix));
         }
         else if (result.isStaticsScopeCorrect() && resolved instanceof PsiJvmMember) {
-          HighlightFixUtil.registerAccessQuickFixAction((PsiJvmMember)resolved, ref, info, result.getCurrentFileResolveScope());
+          HighlightFixUtil.registerAccessQuickFixAction((PsiJvmMember)resolved, ref, info, result.getCurrentFileResolveScope(), null);
           if (ref instanceof PsiReferenceExpression) {
             QuickFixAction.registerQuickFixAction(info, getFixFactory().createRenameWrongRefFix((PsiReferenceExpression)ref));
           }
@@ -3106,10 +3127,11 @@ public final class HighlightUtil {
   }
 
   /**
-   * Checks if the element of the {@link PsiNewExpression} type can be a reference to a static member of the class,
-   * which is the qualifier of the reference element of {@link PsiNewExpression}.
+   * Checks if the specified element is possibly a reference to a static member of a class,
+   * when the {@code new} keyword is removed.
    * The element is split into two parts: the qualifier and the reference element.
-   * If the qualifier is a class and the reference element text matches either a field name or a method name of the class
+   * If they both exist and the qualifier references a class and the reference element text matches either
+   * the name of a static field or the name of a static method of the class
    * then the method returns true
    *
    * @param element an element to examine
@@ -3125,18 +3147,25 @@ public final class HighlightUtil {
 
     final PsiElement qualifier = reference.getQualifier();
     final PsiElement memberName = reference.getReferenceNameElement();
-    if (!(qualifier instanceof PsiReference) || memberName == null) return false;
+    if (!(qualifier instanceof PsiJavaCodeReferenceElement) || memberName == null) return false;
 
-    final PsiReference psiReference = (PsiReference)qualifier;
+    final PsiJavaCodeReferenceElement psiReference = (PsiJavaCodeReferenceElement)qualifier;
+    if (psiReference.getTypeParameterCount() > 0) return false;
     final PsiClass clazz = tryCast(psiReference.resolve(), PsiClass.class);
     if (clazz == null) return false;
 
-    final PsiField field = clazz.findFieldByName(memberName.getText(), true);
-
-    if (field != null) return true;
-    final PsiMethod[] methods = clazz.findMethodsByName(memberName.getText(), true);
-
-    return methods.length != 0;
+    if (newExpression.getArgumentList() == null) {
+      final PsiField field = clazz.findFieldByName(memberName.getText(), true);
+      if (field != null && field.hasModifierProperty(PsiModifier.STATIC)) return true;
+    }
+    else {
+      final PsiMethod[] methods = clazz.findMethodsByName(memberName.getText(), true);
+      if (methods.length == 0) return false;
+      for (PsiMethod method : methods) {
+        if (method.hasModifierProperty(PsiModifier.STATIC)) return true;
+      }
+    }
+    return false;
   }
 
   @NotNull

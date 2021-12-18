@@ -81,15 +81,13 @@ class GradleRunAnythingProviderTest : GradleRunAnythingProviderTestCase() {
       assertCollection(it, "my-task", ":my-task")
     }
     withVariantsFor("wrapper ") {
-      assertCollection(it, "wrapper my-task", "wrapper :my-task", !"wrapper wrapper", !"wrapper :wrapper")
+      assertCollection(it, "wrapper my-task", "wrapper :my-task")
     }
     withVariantsFor("my-task ") {
       assertCollection(it, getGradleOptions("my-task "), getCommonTasks("my-task "), getCommonTasks("my-task :"))
-      assertCollection(it, !"my-task my-task", !"my-task :my-task")
     }
     withVariantsFor(":my-task ") {
       assertCollection(it, getGradleOptions(":my-task "), getCommonTasks(":my-task "), getCommonTasks(":my-task :"))
-      assertCollection(it, !":my-task my-task", !":my-task :my-task")
     }
   }
 
@@ -99,91 +97,94 @@ class GradleRunAnythingProviderTest : GradleRunAnythingProviderTestCase() {
     createProjectSubFile("module/build.gradle", createBuildScriptBuilder().withTask("taskM").generate())
     createProjectSubFile("composite/build.gradle", createBuildScriptBuilder().withTask("taskC").generate())
     createProjectSubFile("composite/module/build.gradle", createBuildScriptBuilder().withTask("taskCM").generate())
-    createProjectSubFile("settings.gradle", GradleSettingScriptBuilder("project").withModule("module").withBuild("composite").generate())
-    createProjectSubFile("composite/settings.gradle", GradleSettingScriptBuilder("composite").withModule("module").generate())
+    createProjectSubFile("settings.gradle", GradleSettingScriptBuilder("project").include("module").includeBuild("composite").generate())
+    createProjectSubFile("composite/settings.gradle", GradleSettingScriptBuilder("composite").include("module").generate())
     importProject()
     withVariantsFor("") {
       assertCollection(it, getGradleOptions())
-      assertCollection(it, getRootProjectTasks(), getRootProjectTasks(":"), !getRootProjectTasks(":module:"))
-      if (isGradleNewerOrSameAs("6.5.1")) {
-        assertCollection(it, getCommonTasks(), getCommonTasks(":"), getCommonTasks(":module:") - ":module:prepareKotlinBuildScriptModel")
-      } else {
-        assertCollection(it, getCommonTasks(), getCommonTasks(":"), getCommonTasks(":module:"))
-      }
-      assertCollection(it, "taskP", ":taskP", !":module:taskP")
-      assertCollection(it, "taskM", !":taskM", ":module:taskM")
-      assertCollection(it, !"taskC", !":taskC", !":module:taskC")
-      assertCollection(it, !"taskCM", !":taskCM", !":module:taskCM")
-
-      if (isGradleNewerOrSameAs("6.8")) {
-        assertCollection(it,
-                         getCommonTasks(":composite:") - ":composite:prepareKotlinBuildScriptModel",
-                         getCommonTasks(":composite:module:") - ":composite:module:prepareKotlinBuildScriptModel")
-      }
+      assertCollection(it, getRootProjectTasks(), getRootProjectTasks(":"))
+      assertCollection(it, !getRootProjectTasks("module:"), !getRootProjectTasks(":module:"))
+      assertCollection(it, !getRootProjectTasks("composite:"), getRootProjectTasks(":composite:"))
+      assertCollection(it, !getRootProjectTasks("composite:module:"), !getRootProjectTasks(":composite:module:"))
+      assertCollection(it, getCommonTasks(), getCommonTasks(":"))
+      assertCollection(it, getCommonTasks("module:"), getCommonTasks(":module:"))
+      assertCollection(it, !getCommonTasks("composite:"), getCommonTasks(":composite:"))
+      assertCollection(it, !getCommonTasks("composite:module:"), getCommonTasks(":composite:module:"))
+      assertCollection(it, "taskP", ":taskP", !"module:taskP", !":module:taskP")
+      assertCollection(it, "taskM", !":taskM", "module:taskM", ":module:taskM")
+      assertCollection(it, !"taskC", !":taskC", !"module:taskC", !":module:taskC")
+      assertCollection(it, !"taskCM", !":taskCM", !"module:taskCM", !":module:taskCM")
+      assertCollection(it, !"composite:taskC", ":composite:taskC", !"composite:module:taskC", !":composite:module:taskC")
+      assertCollection(it, !"composite:taskCM", !":composite:taskCM", !"composite:module:taskCM", ":composite:module:taskCM")
     }
     withVariantsFor("", "project") {
       assertCollection(it, getGradleOptions())
-      assertCollection(it, getRootProjectTasks(), getRootProjectTasks(":"), !getRootProjectTasks(":module:"))
-      if (isGradleNewerOrSameAs("6.5.1")) {
-        assertCollection(it, getCommonTasks(), getCommonTasks(":"), getCommonTasks(":module:") - ":module:prepareKotlinBuildScriptModel")
-      } else {
-        assertCollection(it, getCommonTasks(), getCommonTasks(":"), getCommonTasks(":module:"))
-      }
-      assertCollection(it, "taskP", ":taskP", !":module:taskP")
-      assertCollection(it, "taskM", !":taskM", ":module:taskM")
-      assertCollection(it, !"taskC", !":taskC", !":module:taskC")
-      assertCollection(it, !"taskCM", !":taskCM", !":module:taskCM")
+      assertCollection(it, getRootProjectTasks(), getRootProjectTasks(":"))
+      assertCollection(it, !getRootProjectTasks("module:"), !getRootProjectTasks(":module:"))
+      assertCollection(it, !getRootProjectTasks("composite:"), getRootProjectTasks(":composite:"))
+      assertCollection(it, !getRootProjectTasks("composite:module:"), !getRootProjectTasks(":composite:module:"))
+      assertCollection(it, getCommonTasks(), getCommonTasks(":"))
+      assertCollection(it, getCommonTasks("module:"), getCommonTasks(":module:"))
+      assertCollection(it, !getCommonTasks("composite:"), getCommonTasks(":composite:"))
+      assertCollection(it, !getCommonTasks("composite:module:"), getCommonTasks(":composite:module:"))
+      assertCollection(it, "taskP", ":taskP", !"module:taskP", !":module:taskP")
+      assertCollection(it, "taskM", !":taskM", "module:taskM", ":module:taskM")
+      assertCollection(it, !"taskC", !":taskC", !"module:taskC", !":module:taskC")
+      assertCollection(it, !"taskCM", !":taskCM", !"module:taskCM", !":module:taskCM")
+      assertCollection(it, !"composite:taskC", ":composite:taskC", !"composite:module:taskC", !":composite:module:taskC")
+      assertCollection(it, !"composite:taskCM", !":composite:taskCM", !"composite:module:taskCM", ":composite:module:taskCM")
     }
     withVariantsFor("", "project.module") {
       assertCollection(it, getGradleOptions())
-      assertCollection(it, !getRootProjectTasks(), !getRootProjectTasks(":"), !getRootProjectTasks(":module:"))
-      if (isGradleNewerOrSameAs("6.5.1")) {
-        assertCollection(it, getCommonTasks() - "prepareKotlinBuildScriptModel",
-                         getCommonTasks(":") - ":prepareKotlinBuildScriptModel",
-                         !getCommonTasks(":module:"))
-      } else {
-        assertCollection(it, getCommonTasks(), getCommonTasks(":"), !getCommonTasks(":module:"))
-      }
-      assertCollection(it, !"taskP", !":taskP", !":module:taskP")
-      assertCollection(it, "taskM", ":taskM", !":module:taskM")
-      assertCollection(it, !"taskC", !":taskC", !":module:taskC")
-      assertCollection(it, !"taskCM", !":taskCM", !":module:taskCM")
+      assertCollection(it, !getRootProjectTasks(), !getRootProjectTasks(":"))
+      assertCollection(it, !getRootProjectTasks("module:"), !getRootProjectTasks(":module:"))
+      assertCollection(it, !getRootProjectTasks("composite:"), !getRootProjectTasks(":composite:"))
+      assertCollection(it, !getRootProjectTasks("composite:module:"), !getRootProjectTasks(":composite:module:"))
+      assertCollection(it, getCommonTasks(), getCommonTasks(":"))
+      assertCollection(it, !getCommonTasks("module:"), !getCommonTasks(":module:"))
+      assertCollection(it, !getCommonTasks("composite:module:"), !getCommonTasks(":composite:module:"))
+      assertCollection(it, !getCommonTasks("composite:"), !getCommonTasks(":composite:"))
+      assertCollection(it, !getCommonTasks("composite:module:"), !getCommonTasks(":composite:module:"))
+      assertCollection(it, !"taskP", !":taskP", !"module:taskP", !":module:taskP")
+      assertCollection(it, "taskM", ":taskM", !"module:taskM", !":module:taskM")
+      assertCollection(it, !"taskC", !":taskC", !"module:taskC", !":module:taskC")
+      assertCollection(it, !"taskCM", !":taskCM", !"module:taskCM", !":module:taskCM")
+      assertCollection(it, !"composite:taskC", !":composite:taskC", !"composite:module:taskC", !":composite:module:taskC")
+      assertCollection(it, !"composite:taskCM", !":composite:taskCM", !"composite:module:taskCM", !":composite:module:taskCM")
     }
     withVariantsFor("", "composite") {
-      if (isGradleNewerOrSameAs("6.8")) {
-        assertThat(it).containsExactlyInAnyOrderElementsOf(getGradleOptions())
-        return@withVariantsFor
-      }
       assertCollection(it, getGradleOptions())
-      assertCollection(it, getRootProjectTasks(), getRootProjectTasks(":"), !getRootProjectTasks(":module:"))
-      if (isGradleNewerOrSameAs("6.5.1")) {
-        assertCollection(it, getCommonTasks(), getCommonTasks(":"), getCommonTasks(":module:") - ":module:prepareKotlinBuildScriptModel")
-      } else {
-        assertCollection(it, getCommonTasks(), getCommonTasks(":"), getCommonTasks(":module:"))
-      }
-      assertCollection(it, !"taskP", !":taskP", !":module:taskP")
-      assertCollection(it, !"taskM", !":taskM", !":module:taskM")
-      assertCollection(it, "taskC", ":taskC", !":module:taskC")
-      assertCollection(it, "taskCM", !":taskCM", ":module:taskCM")
+      assertCollection(it, getRootProjectTasks(), getRootProjectTasks(":"))
+      assertCollection(it, !getRootProjectTasks("module:"), !getRootProjectTasks(":module:"))
+      assertCollection(it, !getRootProjectTasks("composite:"), !getRootProjectTasks(":composite:"))
+      assertCollection(it, !getRootProjectTasks("composite:module:"), !getRootProjectTasks(":composite:module:"))
+      assertCollection(it, getCommonTasks(), getCommonTasks(":"))
+      assertCollection(it, getCommonTasks("module:"), getCommonTasks(":module:"))
+      assertCollection(it, !getCommonTasks("composite:"), !getCommonTasks(":composite:"))
+      assertCollection(it, !getCommonTasks("composite:module:"), !getCommonTasks(":composite:module:"))
+      assertCollection(it, !"taskP", !":taskP", !"module:taskP", !":module:taskP")
+      assertCollection(it, !"taskM", !":taskM", !"module:taskM", !":module:taskM")
+      assertCollection(it, "taskC", ":taskC", !"module:taskC", !":module:taskC")
+      assertCollection(it, "taskCM", !":taskCM", "module:taskCM", ":module:taskCM")
+      assertCollection(it, !"composite:taskC", !":composite:taskC", !"composite:module:taskC", !":composite:module:taskC")
+      assertCollection(it, !"composite:taskCM", !":composite:taskCM", !"composite:module:taskCM", !":composite:module:taskCM")
     }
     withVariantsFor("", "composite.module") {
-      if (isGradleNewerOrSameAs("6.8")) {
-        assertThat(it).containsExactlyInAnyOrderElementsOf(getGradleOptions())
-        return@withVariantsFor
-      }
       assertCollection(it, getGradleOptions())
-      assertCollection(it, !getRootProjectTasks(), !getRootProjectTasks(":"), !getRootProjectTasks(":module:"))
-      if (isGradleNewerOrSameAs("6.5.1")) {
-        assertCollection(it, getCommonTasks() - "prepareKotlinBuildScriptModel",
-                         getCommonTasks(":") - ":prepareKotlinBuildScriptModel",
-                         !getCommonTasks(":module:"))
-      } else {
-        assertCollection(it, getCommonTasks(), getCommonTasks(":"), !getCommonTasks(":module:"))
-      }
-      assertCollection(it, !"taskP", !":taskP", !":module:taskP")
-      assertCollection(it, !"taskM", !":taskM", !":module:taskM")
-      assertCollection(it, !"taskC", !":taskC", !":module:taskC")
-      assertCollection(it, "taskCM", ":taskCM", !":module:taskCM")
+      assertCollection(it, !getRootProjectTasks(), !getRootProjectTasks(":"))
+      assertCollection(it, !getRootProjectTasks("module:"), !getRootProjectTasks(":module:"))
+      assertCollection(it, !getRootProjectTasks("composite:"), !getRootProjectTasks(":composite:"))
+      assertCollection(it, !getRootProjectTasks("composite:module:"), !getRootProjectTasks(":composite:module:"))
+      assertCollection(it, getCommonTasks(), getCommonTasks(":"))
+      assertCollection(it, !getCommonTasks("module:"), !getCommonTasks(":module:"))
+      assertCollection(it, !getCommonTasks("composite:"), !getCommonTasks(":composite:"))
+      assertCollection(it, !getCommonTasks("composite:module:"), !getCommonTasks(":composite:module:"))
+      assertCollection(it, !"taskP", !":taskP", !"module:taskP", !":module:taskP")
+      assertCollection(it, !"taskM", !":taskM", !"module:taskM", !":module:taskM")
+      assertCollection(it, !"taskC", !":taskC", !"module:taskC", !":module:taskC")
+      assertCollection(it, "taskCM", ":taskCM", !"module:taskCM", !":module:taskCM")
+      assertCollection(it, !"composite:taskC", !":composite:taskC", !"composite:module:taskC", !":composite:module:taskC")
+      assertCollection(it, !"composite:taskCM", !":composite:taskCM", !"composite:module:taskCM", !":composite:module:taskCM")
     }
   }
 

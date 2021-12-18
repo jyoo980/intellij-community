@@ -49,7 +49,6 @@ import javax.swing.plaf.basic.ComboPopup;
 import javax.swing.text.*;
 import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.HTMLEditorKit;
-import javax.swing.text.html.ParagraphView;
 import javax.swing.text.html.StyleSheet;
 import javax.swing.undo.UndoManager;
 import java.awt.*;
@@ -91,6 +90,16 @@ public final class UIUtil {
   private static final Key<Boolean> IS_SHOWING = Key.create("Component.isShowing");
   private static final Key<Boolean> HAS_FOCUS = Key.create("Component.hasFocus");
 
+  /**
+   * A key for hiding a line under the window title bar on macOS
+   * It works if and only if transparent title bars are enabled and IDE runs on JetBrains Runtime
+   */
+  @ApiStatus.Internal
+  public static final String NO_BORDER_UNDER_WINDOW_TITLE_KEY = "";
+
+  //TODO: lazy
+  static final StyleSheet NO_GAPS_BETWEEN_PARAGRAPHS_STYLE = StyleSheetUtil.createStyleSheet("p { margin-top: 0; }");
+
   // cannot be static because logging maybe not configured yet
   private static @NotNull Logger getLogger() {
     return Logger.getInstance(UIUtil.class);
@@ -111,21 +120,24 @@ public final class UIUtil {
   }
 
   public static void setCustomTitleBar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose) {
+    if (SystemInfoRt.isMac && (Registry.is("ide.experimental.ui", false) || Registry.is("ide.experimental.ui.main.toolbar", false))) {
+      setCustomTitleForToolbar(window, rootPane, onDispose);
+      return;
+    }
+
+    if (SystemInfoRt.isMac && Registry.is("ide.mac.transparentTitleBarAppearance", false)) {
+      setTransparentTitleBar(window, rootPane, onDispose);
+      return;
+    }
+  }
+
+  public static void setTransparentTitleBar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose) {
     if (!SystemInfoRt.isMac || !Registry.is("ide.mac.transparentTitleBarAppearance", false)) {
       return;
     }
 
     JBInsets topWindowInset =  JBUI.insetsTop(getTransparentTitleBarHeight(rootPane));
-
-    rootPane.putClientProperty("apple.awt.fullWindowContent", true);
-    rootPane.putClientProperty("apple.awt.transparentTitleBar", true);
-
-    // Use standard properties starting jdk 17
-    if (Runtime.version().feature() >= 17) {
-      rootPane.putClientProperty("apple.awt.windowTitleVisible", false);
-    }
-
-    AbstractBorder customDecorationBorder = new AbstractBorder() {
+    AbstractBorder customBorder = new AbstractBorder() {
       @Override
       public Insets getBorderInsets(Component c) {
         return topWindowInset;
@@ -138,6 +150,15 @@ public final class UIUtil {
           Rectangle headerRectangle = new Rectangle(0, 0, c.getWidth(), topWindowInset.top);
           graphics.setColor(getPanelBackground());
           graphics.fill(headerRectangle);
+          if (SystemInfo.isMac && Registry.is("ide.mac.transparentTitleBarAppearance")) {
+            if (window instanceof RootPaneContainer) {
+              JRootPane pane = ((RootPaneContainer)window).getRootPane();
+              if (pane == null || pane.getClientProperty(NO_BORDER_UNDER_WINDOW_TITLE_KEY) != Boolean.TRUE) {
+                graphics.setColor(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground());
+                LinePainter2D.paint(graphics, 0, topWindowInset.top - 1, c.getWidth(), topWindowInset.top - 1, LinePainter2D.StrokeType.INSIDE, 1);
+              }
+            }
+          }
           Color color = window.isActive()
                         ? JBColor.black
                         : JBColor.gray;
@@ -148,7 +169,51 @@ public final class UIUtil {
         }
       }
     };
-    rootPane.setBorder(customDecorationBorder);
+    doSetCustomTitleBar(window, rootPane, onDispose, customBorder);
+  }
+
+  public static void setCustomTitleForToolbar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose) {
+    if (!SystemInfoRt.isMac || (!Registry.is("ide.experimental.ui", false)
+                                && !Registry.is("ide.experimental.ui.main.toolbar", false))) {
+      return;
+    }
+    JBInsets topWindowInset =  JBUI.insetsTop(getTransparentTitleBarHeight(rootPane));
+    AbstractBorder customBorder = new AbstractBorder() {
+      @Override
+      public Insets getBorderInsets(Component c) {
+        return topWindowInset;
+      }
+
+      @Override
+      public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
+        Graphics2D graphics = (Graphics2D)g.create();
+        try {
+          Rectangle headerRectangle = new Rectangle(0, 0, c.getWidth(), topWindowInset.top);
+          Color color = UIManager.getColor("MainToolbar.background");
+          graphics.setColor(color != null ? color : getPanelBackground());
+          graphics.fill(headerRectangle);
+        }
+        finally {
+          graphics.dispose();
+        }
+      }
+    };
+    rootPane.putClientProperty("apple.awt.windowTitleVisible", false);
+    doSetCustomTitleBar(window, rootPane, onDispose, customBorder);
+  }
+
+  private static void doSetCustomTitleBar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose,
+                                          @NotNull Border customBorder) {
+
+    rootPane.putClientProperty("apple.awt.fullWindowContent", true);
+    rootPane.putClientProperty("apple.awt.transparentTitleBar", true);
+
+    // Use standard properties starting jdk 17
+    //if (Runtime.version().feature() >= 17) {
+      //rootPane.putClientProperty("apple.awt.windowTitleVisible", false);
+    //}
+
+    rootPane.setBorder(customBorder);
 
     WindowAdapter windowAdapter = new WindowAdapter() {
       @Override
@@ -174,7 +239,12 @@ public final class UIUtil {
     if (property instanceof Integer) {
       return (int)property;
     }
-    return "small".equals(rootPane.getClientProperty("Window.style")) ? 19 : 24;
+
+    if ("small".equals(rootPane.getClientProperty("Window.style"))) {
+      return JBUI.getInt("macOSWindow.Title.heightSmall", 19);
+    } else {
+      return JBUI.getInt("macOSWindow.Title.height", SystemInfo.isMacOSBigSur ? 29 : 23);
+    }
   }
 
   private static String getWindowTitle(Window window) {
@@ -183,20 +253,20 @@ public final class UIUtil {
 
   // Here we setup window to be checked in IdeEventQueue and reset typeahead state when the window finally appears and gets focus
   public static void markAsTypeAheadAware(Window window) {
-    putWindowClientProperty(window, "TypeAheadAwareWindow", Boolean.TRUE);
+    ClientProperty.put(window, "TypeAheadAwareWindow", Boolean.TRUE);
   }
 
   public static boolean isTypeAheadAware(Window window) {
-    return isWindowClientPropertyTrue(window, "TypeAheadAwareWindow");
+    return ClientProperty.isTrue(window, "TypeAheadAwareWindow");
   }
 
   // Here we setup dialog to be suggested in OwnerOptional as owner even if the dialog is not modal
   public static void markAsPossibleOwner(Dialog dialog) {
-    putWindowClientProperty(dialog, "PossibleOwner", Boolean.TRUE);
+    ClientProperty.put(dialog, "PossibleOwner", Boolean.TRUE);
   }
 
   public static boolean isPossibleOwner(@NotNull Dialog dialog) {
-    return isWindowClientPropertyTrue(dialog, "PossibleOwner");
+    return ClientProperty.isTrue(dialog, "PossibleOwner");
   }
 
   public static int getMultiClickInterval() {
@@ -417,7 +487,7 @@ public final class UIUtil {
   private static final Action REDO_ACTION = new AbstractAction() {
     @Override
     public void actionPerformed(@NotNull ActionEvent e) {
-      UndoManager manager = getClientProperty(e.getSource(), UNDO_MANAGER);
+      UndoManager manager = ClientProperty.get(ObjectUtils.tryCast(e.getSource(), Component.class), UNDO_MANAGER);
       if (manager != null && manager.canRedo()) {
         manager.redo();
       }
@@ -426,7 +496,7 @@ public final class UIUtil {
   private static final Action UNDO_ACTION = new AbstractAction() {
     @Override
     public void actionPerformed(@NotNull ActionEvent e) {
-      UndoManager manager = getClientProperty(e.getSource(), UNDO_MANAGER);
+      UndoManager manager = ClientProperty.get(ObjectUtils.tryCast(e.getSource(), Component.class), UNDO_MANAGER);
       if (manager != null && manager.canUndo()) {
         manager.undo();
       }
@@ -503,45 +573,55 @@ public final class UIUtil {
     }
   }
 
+  /**
+   * @deprecated use {@link ClientProperty#isTrue(Component, Object)} instead
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static boolean isWindowClientPropertyTrue(Window window, @NotNull Object key) {
-    return Boolean.TRUE.equals(getWindowClientProperty(window, key));
+    return ClientProperty.isTrue(window, key);
   }
 
+  /**
+   * @deprecated use {@link ClientProperty#get(Component, Object)} instead
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static Object getWindowClientProperty(Window window, @NotNull Object key) {
-    if (window instanceof RootPaneContainer) {
-      JRootPane pane = ((RootPaneContainer)window).getRootPane();
-      if (pane != null) {
-        return pane.getClientProperty(key);
-      }
-    }
-    return null;
+    return ClientProperty.get(window, key);
   }
 
+  /**
+   * @deprecated use {@link ClientProperty#put(Window, Object, Object)}  instead
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static void putWindowClientProperty(Window window, @NotNull Object key, Object value) {
-    if (window instanceof RootPaneContainer) {
-      JRootPane pane = ((RootPaneContainer)window).getRootPane();
-      if (pane != null) {
-        pane.putClientProperty(key, value);
-      }
-    }
+    ClientProperty.put(window, key, value);
   }
 
   /**
    * @param component a Swing component that may hold a client property value
    * @param key       the client property key
    * @return {@code true} if the property of the specified component is set to {@code true}
+   * @deprecated use {@link ClientProperty#isTrue(Component, Object)} instead
    */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static boolean isClientPropertyTrue(Object component, @NotNull Object key) {
-    return Boolean.TRUE.equals(component instanceof JComponent ? ((JComponent)component).getClientProperty(key) : null);
+    return component instanceof Component && ClientProperty.isTrue((Component)component, key);
   }
 
   /**
    * @param component a Swing component that may hold a client property value
    * @param key       the client property key that specifies a return type
    * @return the property value from the specified component or {@code null}
+   * @deprecated use {@link ClientProperty#get(Component, Object)} instead
    */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static Object getClientProperty(Object component, @NotNull @NonNls Object key) {
-    return component instanceof JComponent ? ((JComponent)component).getClientProperty(key) : null;
+    return component instanceof Component ? ClientProperty.get((Component)component, key) : null;
   }
 
   @NotNull
@@ -576,22 +656,29 @@ public final class UIUtil {
    * @return the property value from the specified component or {@code null}
    */
   public static <T> T getClientProperty(Object component, @NotNull Class<T> type) {
-    return ObjectUtils.tryCast(getClientProperty(component, (Object)type), type);
+    return ObjectUtils.tryCast(ClientProperty.get(ObjectUtils.tryCast(component, Component.class), type), type);
   }
 
   /**
    * @param component a Swing component that may hold a client property value
    * @param key       the client property key that specifies a return type
    * @return the property value from the specified component or {@code null}
+   * @deprecated use {@link ClientProperty#get(Component, Key)} instead
    */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static <T> T getClientProperty(Object component, @NotNull Key<T> key) {
-    Object value = getClientProperty(component, (Object)key);
-    //noinspection unchecked
-    return value != null ? (T)value : null;
+    return component instanceof Component ? ClientProperty.get((Component)component, key) : null;
   }
 
+  /**
+   * @deprecated use {@link JComponent#putClientProperty(Object, Object)}
+   * or {@link ClientProperty#put(JComponent, Key, Object)} instead
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static <T> void putClientProperty(@NotNull JComponent component, @NotNull Key<T> key, T value) {
-    ComponentUtil.putClientProperty(component, key, value);
+    component.putClientProperty(key, value);
   }
 
   @Contract(pure = true)
@@ -898,7 +985,7 @@ public final class UIUtil {
     return JBColor.namedColor("Label.foreground", new JBColor(Gray._0, Gray.xBB));
   }
 
-  public static Color getErrorForeground() {
+  public static @NotNull Color getErrorForeground() {
     return JBColor.namedColor("Label.errorForeground", new JBColor(new Color(0xC7222D), JBColor.RED));
   }
 
@@ -1675,7 +1762,8 @@ public final class UIUtil {
 
   /**
    * Dispatch all pending invocation events (if any) in the {@link com.intellij.ide.IdeEventQueue}, ignores and removes all other events from the queue.
-   * In tests, consider using {@link com.intellij.testFramework.PlatformTestUtil#dispatchAllInvocationEventsInIdeEventQueue()}
+   * In tests, consider using {@link com.intellij.testFramework.PlatformTestUtil#dispatchAllInvocationEventsInIdeEventQueue()} instead
+   * Must be called from EDT.
    * @see #pump()
    */
   @TestOnly
@@ -1802,7 +1890,7 @@ public final class UIUtil {
    */
   @ApiStatus.Experimental
   public static boolean hasFocus(@NotNull Component component) {
-    if (Boolean.getBoolean("java.awt.headless") || component.hasFocus()) {
+    if (GraphicsEnvironment.isHeadless() || component.hasFocus()) {
       return true;
     }
 
@@ -1816,7 +1904,7 @@ public final class UIUtil {
   @ApiStatus.Internal
   @ApiStatus.Experimental
   public static void markAsFocused(@NotNull JComponent component, boolean value) {
-    if (Boolean.getBoolean("java.awt.headless")) {
+    if (GraphicsEnvironment.isHeadless()) {
       return;
     }
     component.putClientProperty(HAS_FOCUS, value ? Boolean.TRUE : null);
@@ -2016,46 +2104,40 @@ public final class UIUtil {
     return StartupUiUtil.getLabelFont();
   }
 
+  /**
+   * @deprecated use {@link StyleSheetUtil#loadStyleSheet}
+   */
+  @Deprecated
   public static @Nullable StyleSheet loadStyleSheet(@Nullable URL url) {
-    return StartupUiUtil.loadStyleSheet(url);
+    return StyleSheetUtil.loadStyleSheet(url);
   }
 
+  /**
+   * @deprecated use {@link HTMLEditorKitBuilder}
+   */
+  @Deprecated
   public static @NotNull HTMLEditorKit getHTMLEditorKit() {
-    return getHTMLEditorKit(true);
+    return HTMLEditorKitBuilder.simple();
   }
 
+  /**
+   * @deprecated use {@link HTMLEditorKitBuilder}
+   */
+  @Deprecated
   public static @NotNull HTMLEditorKit getHTMLEditorKit(boolean noGapsBetweenParagraphs) {
-    return new JBHtmlEditorKit(noGapsBetweenParagraphs);
+    HTMLEditorKitBuilder builder = new HTMLEditorKitBuilder();
+    if(!noGapsBetweenParagraphs) builder.withGapsBetweenParagraphs();
+    return builder.build();
   }
 
+  /**
+   * @deprecated use {@link HTMLEditorKitBuilder#withWordWrapViewFactory()}
+   */
+  @Deprecated
   public static final class JBWordWrapHtmlEditorKit extends JBHtmlEditorKit {
-    private final ViewFactory myFactory = new HTMLFactory() {
-      @Override
-      public View create(Element e) {
-        View view = super.create(e);
-        if (view instanceof javax.swing.text.html.ParagraphView) {
-          // wrap too long words, for example: ATEST_TABLE_SIGNLE_ROW_UPDATE_AUTOCOMMIT_A_FIK
-          return new ParagraphView(e) {
-            @Override
-            protected SizeRequirements calculateMinorAxisRequirements(int axis, SizeRequirements r) {
-              if (r == null) {
-                r = new SizeRequirements();
-              }
-              r.minimum = (int)layoutPool.getMinimumSpan(axis);
-              r.preferred = Math.max(r.minimum, (int)layoutPool.getPreferredSpan(axis));
-              r.maximum = Integer.MAX_VALUE;
-              r.alignment = 0.5f;
-              return r;
-            }
-          };
-        }
-        return view;
-      }
-    };
-
     @Override
     public ViewFactory getViewFactory() {
-      return myFactory;
+      return ExtendableHTMLViewFactory.DEFAULT_WORD_WRAP;
     }
   }
 
@@ -2110,7 +2192,7 @@ public final class UIUtil {
       .expand(o -> o == c || o instanceof JPanel || o instanceof JLayeredPane)
       .filter(JScrollPane.class);
     for (JScrollPane scrollPane : scrollPanes) {
-      Integer keepBorderSides = ComponentUtil.getClientProperty(scrollPane, KEEP_BORDER_SIDES);
+      Integer keepBorderSides = ClientProperty.get(scrollPane, KEEP_BORDER_SIDES);
       if (keepBorderSides != null) {
         if (scrollPane.getBorder() instanceof LineBorder) {
           Color color = ((LineBorder)scrollPane.getBorder()).getLineColor();
@@ -2393,7 +2475,7 @@ public final class UIUtil {
     }
     if (c instanceof JComponent) {
       JComponent jc = (JComponent)c;
-      Iterable<? extends Component> orphans = ComponentUtil.getClientProperty(jc, NOT_IN_HIERARCHY_COMPONENTS);
+      Iterable<? extends Component> orphans = ClientProperty.get(jc, NOT_IN_HIERARCHY_COMPONENTS);
       if (orphans != null) {
         result = result.append(orphans);
       }
@@ -2668,7 +2750,7 @@ public final class UIUtil {
     forEachComponentInHierarchy(component, c -> c.setForeground(bg));
   }
 
-  private static void forEachComponentInHierarchy(@NotNull Component component, @NotNull Consumer<? super Component> action) {
+  public static void forEachComponentInHierarchy(@NotNull Component component, @NotNull Consumer<? super Component> action) {
     action.consume(component);
     if (component instanceof Container) {
       for (Component c : ((Container)component).getComponents()) {
@@ -2836,7 +2918,7 @@ public final class UIUtil {
   }
 
   public static void resetUndoRedoActions(@NotNull JTextComponent textComponent) {
-    UndoManager undoManager = ComponentUtil.getClientProperty(textComponent, UNDO_MANAGER);
+    UndoManager undoManager = ClientProperty.get(textComponent, UNDO_MANAGER);
     if (undoManager != null) {
       undoManager.discardAllEdits();
     }
@@ -3391,7 +3473,7 @@ public final class UIUtil {
     editorPane.setOpaque(false);
     editorPane.setBorder(null);
     editorPane.setContentType("text/html");
-    editorPane.setEditorKit(getHTMLEditorKit());
+    editorPane.setEditorKit(HTMLEditorKitBuilder.simple());
   }
 
   /**
@@ -3557,7 +3639,11 @@ public final class UIUtil {
     StartupUiUtil.drawImage(g, image, x, y, -1, -1, op, null);
   }
 
-  /** @see UIUtil#dispatchAllInvocationEvents() */
+  /**
+   * Waits for the EDT to dispatch all its invocation events.
+   * Must be called outside EDT.
+   * Use {@link com.intellij.testFramework.PlatformTestUtil#dispatchAllInvocationEventsInIdeEventQueue()} if you want to pump from inside EDT
+   **/
   @TestOnly
   public static void pump() {
     assert !SwingUtilities.isEventDispatchThread();

@@ -8,7 +8,8 @@ import com.intellij.openapi.ui.popup.ComponentPopupBuilder
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.popup.AbstractPopup
-import com.intellij.ui.popup.PopupPositionManager
+import com.intellij.ui.popup.PopupPositionManager.Position
+import com.intellij.ui.popup.PopupPositionManager.PositionAdjuster
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +30,11 @@ internal abstract class SecondaryPopupContext : PopupContext {
 
   override fun setUpPopup(popup: AbstractPopup, popupUI: DocumentationPopupUI) {
     val resized = popupUI.useStoredSize()
+    if (!resized.get()) {
+      // a popup might be shown before its content was loaded (with "Fetching..." message)
+      // => no update events were generated => ensure popup size is set
+      resizePopup(popup)
+    }
     popupUI.updatePopup {
       if (!resized.get()) {
         resizePopup(popup)
@@ -75,5 +81,5 @@ private fun installPositionAdjuster(popup: JBPopup, anchor: Component) {
 }
 
 private fun repositionPopup(popup: JBPopup, anchor: Component) {
-  PopupPositionManager.PositionAdjuster(anchor).adjust(popup, PopupPositionManager.Position.RIGHT, PopupPositionManager.Position.LEFT)
+  PositionAdjuster(anchor).adjust(popup, popup.size, Position.RIGHT, Position.LEFT)
 }

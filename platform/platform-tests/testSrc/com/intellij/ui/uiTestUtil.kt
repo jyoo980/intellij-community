@@ -9,6 +9,7 @@ import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.rt.execution.junit.FileComparisonFailure
+import com.intellij.testFramework.UITestUtil
 import com.intellij.testFramework.UsefulTestCase
 import com.intellij.testFramework.assertions.compareFileContent
 import com.intellij.ui.components.ActionLink
@@ -20,9 +21,10 @@ import com.intellij.util.io.exists
 import com.intellij.util.io.inputStream
 import com.intellij.util.io.sanitizeFileName
 import com.intellij.util.io.write
-import com.intellij.util.ui.JBHtmlEditorKit
 import com.intellij.ui.scale.TestScaleHelper
 import com.intellij.ui.scale.paint.ImageComparator
+import com.intellij.util.ui.StartupUiUtil
+import com.intellij.util.ui.StyleSheetUtil
 import kotlinx.coroutines.withContext
 import org.junit.rules.ExternalResource
 import org.junit.rules.TestName
@@ -51,7 +53,7 @@ open class RequireHeadlessMode : ExternalResource() {
       // on TC headless is not enabled
     }
     else {
-      System.setProperty("java.awt.headless", "true")
+      UITestUtil.setHeadlessProperty(true)
       if (!GraphicsEnvironment.isHeadless()) {
         throw RuntimeException("must be headless")
       }
@@ -86,7 +88,7 @@ internal suspend fun changeLafIfNeeded(lafName: String) {
     if (lafName == "Darcula") {
       // static init it is hell - UIUtil static init is called too early, so, call it to init properly
       // (otherwise null stylesheet added and it leads to NPE on set comment text)
-      UIManager.getDefaults().put("javax.swing.JLabel.userStyleSheet", JBHtmlEditorKit.createStyleSheet())
+      UIManager.getDefaults().put("javax.swing.JLabel.userStyleSheet", StyleSheetUtil.createJBDefaultStyleSheet())
     }
   }
 }

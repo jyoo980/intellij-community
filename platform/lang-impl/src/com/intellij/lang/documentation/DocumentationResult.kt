@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.documentation
 
 import com.intellij.util.AsyncSupplier
@@ -17,8 +17,12 @@ sealed interface DocumentationResult {
      */
     @JvmStatic
     @JvmOverloads
-    fun documentation(html: @Nls String, anchor: String? = null): DocumentationResult {
-      return DocumentationData(html, anchor, externalUrl = null)
+    fun documentation(
+      html: @Nls String,
+      anchor: String? = null,
+      imageResolver: DocumentationImageResolver? = null,
+    ): DocumentationResult {
+      return DocumentationData(html, anchor, externalUrl = null, linkUrls = emptyList(), imageResolver)
     }
 
     /**
@@ -27,8 +31,13 @@ sealed interface DocumentationResult {
      */
     @JvmStatic
     @JvmOverloads
-    fun externalDocumentation(html: @Nls String, anchor: String? = null, externalUrl: String): DocumentationResult {
-      return DocumentationData(html, anchor, externalUrl)
+    fun externalDocumentation(
+      html: @Nls String,
+      anchor: String? = null,
+      externalUrl: String,
+      imageResolver: DocumentationImageResolver? = null,
+    ): DocumentationResult {
+      return DocumentationData(html, anchor, externalUrl, linkUrls = emptyList(), imageResolver)
     }
 
     /**

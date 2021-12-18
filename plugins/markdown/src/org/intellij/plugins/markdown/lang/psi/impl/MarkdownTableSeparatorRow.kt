@@ -50,8 +50,8 @@ class MarkdownTableSeparatorRow(text: CharSequence): LeafPsiElement(MarkdownToke
     return ranges
   }
 
-  val parentTable: MarkdownTableImpl?
-    get() = parents(withSelf = true).find { it.hasType(MarkdownElementTypes.TABLE) } as? MarkdownTableImpl
+  val parentTable: MarkdownTable?
+    get() = parents(withSelf = true).find { it.hasType(MarkdownElementTypes.TABLE) } as? MarkdownTable
 
   val cellsRanges: List<TextRange>
     get() = cachedCellsRanges
@@ -67,6 +67,21 @@ class MarkdownTableSeparatorRow(text: CharSequence): LeafPsiElement(MarkdownToke
       local -> cellsLocalRanges.getOrNull(index)
       else -> cellsRanges.getOrNull(index)
     }
+  }
+
+  fun getCellRangeWithPipes(index: Int, local: Boolean = false): TextRange? {
+    val range = getCellRange(index, local) ?: return null
+    val shifted = range.shiftLeft(startOffset)
+    val elementText = text
+    val left = when {
+      elementText.getOrNull(shifted.startOffset - 1) == TableProps.SEPARATOR_CHAR -> range.startOffset - 1
+      else -> range.startOffset
+    }
+    val right = when {
+      elementText.getOrNull(shifted.endOffset) == TableProps.SEPARATOR_CHAR -> range.endOffset + 1
+      else -> range.endOffset
+    }
+    return TextRange(left, right)
   }
 
   fun getCellText(index: Int): String? {

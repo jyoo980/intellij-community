@@ -1125,6 +1125,8 @@ public class ControlFlowAnalyzer extends JavaElementVisitor {
       if (condGotoOffset != null) {
         condGotoOffset.setOffset(assignmentInstr.getIndex());
       }
+
+      addInstruction(new PopInstruction());
     }
 
     if (sourcePattern == innerPattern) {
@@ -2391,6 +2393,6 @@ public class ControlFlowAnalyzer extends JavaElementVisitor {
     new OptionalChainInliner(), new LambdaInliner(),
     new StreamChainInliner(), new MapUpdateInliner(), new AssumeInliner(), new ClassMethodsInliner(),
     new AssertAllInliner(), new BoxingInliner(), new SimpleMethodInliner(),
-    new TransformInliner(), new EnumCompareInliner()
+    new TransformInliner(), new EnumCompareInliner(), new IndexOfInliner()
   };
 }

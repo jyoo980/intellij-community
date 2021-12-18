@@ -164,24 +164,11 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
       }
 
       @Override
-      public void visitWhileStatement(PsiWhileStatement statement) {
-        checkLoopCondition(statement.getCondition());
-      }
-
-      @Override
       public void visitDoWhileStatement(PsiDoWhileStatement statement) {
-        checkLoopCondition(statement.getCondition());
-      }
-
-      @Override
-      public void visitForStatement(PsiForStatement statement) {
-        checkLoopCondition(statement.getCondition());
-      }
-
-      private void checkLoopCondition(PsiExpression condition) {
-        condition = PsiUtil.skipParenthesizedExprDown(condition);
+        PsiExpression condition = PsiUtil.skipParenthesizedExprDown(statement.getCondition());
         if (condition != null && condition.textMatches(PsiKeyword.FALSE)) {
-          holder.registerProblem(condition, JavaAnalysisBundle.message("dataflow.message.constant.no.ref", 0), createSimplifyBooleanExpressionFix(condition, false));
+          holder.registerProblem(condition, JavaAnalysisBundle.message("dataflow.message.constant.no.ref", 0),
+                                 createSimplifyBooleanExpressionFix(condition, false));
         }
       }
     };
@@ -248,7 +235,7 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
     return Collections.emptyList();
   }
 
-  protected @NotNull List<LocalQuickFix> createNPEFixes(@NotNull PsiExpression qualifier, PsiExpression expression, boolean onTheFly) {
+  protected @NotNull List<LocalQuickFix> createNPEFixes(@Nullable PsiExpression qualifier, PsiExpression expression, boolean onTheFly) {
     return Collections.emptyList();
   }
 
@@ -278,7 +265,7 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
 
   private void createDescription(ProblemsHolder holder,
                                  final DataFlowInstructionVisitor visitor,
-                                 PsiElement scope, 
+                                 PsiElement scope,
                                  Instruction @NotNull [] instructions) {
     ProblemReporter reporter = new ProblemReporter(holder, scope);
 
@@ -340,8 +327,9 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
       if (entry.getValue() != ThreeState.YES) continue;
       PsiCaseLabelElement label = entry.getKey();
       PsiSwitchLabelStatementBase labelStatement = Objects.requireNonNull(PsiImplUtil.getSwitchLabel(label));
-      PsiSwitchBlock statement = labelStatement.getEnclosingSwitchBlock();
-      if (statement == null || !canRemoveUnreachableBranches(labelStatement, statement)) continue;
+      PsiSwitchBlock switchBlock = labelStatement.getEnclosingSwitchBlock();
+      if (switchBlock == null || !canRemoveUnreachableBranches(labelStatement, switchBlock)) continue;
+      if (!canRemoveTheOnlyReachableLabel(label, switchBlock)) continue;
       if (!StreamEx.iterate(labelStatement, Objects::nonNull, l -> PsiTreeUtil.getPrevSiblingOfType(l, PsiSwitchLabelStatementBase.class))
         .skip(1).map(PsiSwitchLabelStatementBase::getCaseLabelElementList)
         .nonNull().flatArray(PsiCaseLabelElementList::getElements)
@@ -349,9 +337,15 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
         .allMatch(l -> labelReachability.get(l) == ThreeState.NO)) {
         continue;
       }
-      coveredSwitches.add(statement);
-      holder.registerProblem(label, JavaAnalysisBundle.message("dataflow.message.only.switch.label"),
-                             createUnwrapSwitchLabelFix());
+      coveredSwitches.add(switchBlock);
+      LocalQuickFix unwrapFix;
+      if (switchBlock instanceof PsiSwitchExpression && !CodeBlockSurrounder.canSurround(((PsiSwitchExpression)switchBlock))) {
+        unwrapFix = null;
+      }
+      else {
+        unwrapFix = createUnwrapSwitchLabelFix();
+      }
+      holder.registerProblem(label, JavaAnalysisBundle.message("dataflow.message.only.switch.label"), unwrapFix);
     }
     PsiSwitchBlock switchBlock = PsiTreeUtil.getParentOfType(labelReachability.keySet().iterator().next(), PsiSwitchBlock.class);
     Set<PsiElement> suspiciousElements = SwitchBlockHighlightingModel.findSuspiciousLabelElements(switchBlock);
@@ -372,7 +366,7 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
     List<PsiSwitchLabelStatementBase> allBranches =
       PsiTreeUtil.getChildrenOfTypeAsList(statement.getBody(), PsiSwitchLabelStatementBase.class);
     if (statement instanceof PsiSwitchStatement) {
-      // Cannot do anything if we have already single branch and we cannot restore flow due to non-terminal breaks
+      // Cannot do anything if we have already single branch, and we cannot restore flow due to non-terminal breaks
       return allBranches.size() != 1 || BreakConverter.from(statement) != null;
     }
     // Expression switch: if we cannot unwrap existing branch and the other one is default case, we cannot kill it either
@@ -380,6 +374,18 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
            !ContainerUtil.and(allBranches, branch -> branch == labelStatement || SwitchUtils.isDefaultLabel(branch))) ||
            (labelStatement instanceof PsiSwitchLabeledRuleStatement &&
             ((PsiSwitchLabeledRuleStatement)labelStatement).getBody() instanceof PsiExpressionStatement);
+  }
+
+  private static boolean canRemoveTheOnlyReachableLabel(@NotNull PsiCaseLabelElement label, @NotNull PsiSwitchBlock switchBlock) {
+    if (!(label instanceof PsiPattern)) return true;
+    PsiExpression selector = switchBlock.getExpression();
+    if (selector == null) return false;
+    PsiType selectorType = selector.getType();
+    if (selectorType == null) return false;
+    if (!JavaPsiPatternUtil.isTotalForType(((PsiPattern)label), selectorType)) return true;
+    int branchCount = SwitchUtils.calculateBranchCount(switchBlock);
+    // it's a compilation error if switch contains both default and total pattern, so no additional suggestion is needed
+    return branchCount > 1;
   }
 
   private void reportConstants(ProblemReporter reporter, DataFlowInstructionVisitor visitor) {
@@ -599,13 +605,12 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
                                            Map<PsiExpression, ConstantResult> expressions) {
     for (NullabilityProblem<?> problem : problems) {
       PsiExpression expression = problem.getDereferencedExpression();
+      boolean nullLiteral = ExpressionUtils.isNullLiteral(PsiUtil.skipParenthesizedExprDown(expression));
       if (!REPORT_UNSOUND_WARNINGS) {
-        if (expression == null) continue;
-        PsiExpression unwrapped = PsiUtil.skipParenthesizedExprDown(expression);
-        if (!ExpressionUtils.isNullLiteral(unwrapped) && expressions.get(expression) != ConstantResult.NULL) {
-          continue;
-        }
+        if (expression == null || !nullLiteral && expressions.get(expression) != ConstantResult.NULL) continue;
       }
+      // Expression of null type: could be failed LVTI, skip it to avoid confusion
+      if (expression != null && !nullLiteral && PsiType.NULL.equals(expression.getType())) continue;
       NullabilityProblemKind.innerClassNPE.ifMyProblem(problem, newExpression -> {
         List<LocalQuickFix> fixes = createNPEFixes(newExpression.getQualifier(), newExpression, reporter.isOnTheFly());
         reporter
@@ -1081,7 +1086,7 @@ public abstract class DataFlowInspectionBase extends AbstractBaseJavaLocalInspec
         if (tokenType.equals(JavaTokenType.ANDAND) || tokenType.equals(JavaTokenType.OROR)) {
           // always true operand makes always true OR-chain and does not affect the result of AND-chain
           // Note that in `assert unknownExpression && trueExpression;` the trueExpression should not be reported
-          // because this assert is essentially the shortened `assert unknownExpression; assert trueExpression;`
+          // because this assertion is essentially the shortened `assert unknownExpression; assert trueExpression;`
           // which is not reported.
           boolean causesShortCircuit = (tokenType.equals(JavaTokenType.OROR) == evaluatesToTrue) &&
                                        ArrayUtil.getLastElement(((PsiPolyadicExpression)parent).getOperands()) != anchor;

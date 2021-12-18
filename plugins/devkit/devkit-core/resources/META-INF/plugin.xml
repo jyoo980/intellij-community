@@ -25,6 +25,7 @@
   <resource-bundle>messages.DevKitBundle</resource-bundle>
 
   <extensions defaultExtensionNs="com.intellij">
+    <checkinHandlerFactory implementation="org.jetbrains.idea.devkit.commit.KotlinPluginCommitMessageHandlerFactory"/>
     <virtualFileSystem key="testdata" implementationClass="org.jetbrains.idea.devkit.testAssistant.vfs.TestDataGroupFileSystem"/>
     <editorTabTitleProvider implementation="org.jetbrains.idea.devkit.testAssistant.TestDataGroupEditorTabTitleProvider"/>
     <highlightingPassFactory implementation="org.jetbrains.idea.devkit.testAssistant.TestDataHighlightingPassFactory"/>
@@ -35,7 +36,6 @@
     <gotoRelatedProvider implementation="org.jetbrains.idea.devkit.testAssistant.TestCaseAsRelatedFileProvider"/>
     <gotoRelatedProvider implementation="org.jetbrains.idea.devkit.navigation.DescriptionInspectionGotoRelatedProvider"/>
     <psi.referenceContributor language="UAST" implementation="org.jetbrains.idea.devkit.testAssistant.TestDataReferenceContributor"/>
-    <getDataRule key="TestLocationData" implementationClass="org.jetbrains.idea.devkit.testAssistant.TestLocationDataRule"/>
 
     <automaticRenamerFactory implementation="org.jetbrains.idea.devkit.refactoring.InspectionAutomaticRenamerFactory"/>
     <httpRequestHandler implementation="org.jetbrains.idea.devkit.debug.HttpDebugListener"/>
@@ -285,6 +285,7 @@
     <implicitUsageProvider implementation="org.jetbrains.idea.devkit.inspections.DevKitImplicitUsageProvider"/>
     <psi.referenceContributor language="XML" implementation="org.jetbrains.idea.devkit.dom.impl.I18nReferenceContributor"/>
     <psi.referenceContributor language="UAST" implementation="org.jetbrains.idea.devkit.references.ExperimentalFeatureIdContributor"/>
+    <psi.referenceContributor language="UAST" implementation="org.jetbrains.idea.devkit.references.AdvancedSettingsIdContributor"/>
     <psi.referenceContributor implementation="org.jetbrains.idea.devkit.references.IconsReferencesContributor"/>
     <psi.referenceContributor language="UAST" implementation="org.jetbrains.idea.devkit.references.TestDataFilesReferencesContributor"/>
     <psi.referenceContributor language="XML" implementation="org.jetbrains.idea.devkit.references.ThemeEPPathReferenceContributor"/>
@@ -407,6 +408,8 @@
     <registryKey key="tmh.generate.line.numbers" defaultValue="true"
                  description="Generate line numbers when instrumenting @RequiresEdt and similar annotations.
                  This results in better stack traces when generated assertions throw exceptions, but might slow down the compilation."/>
+    <registryKey key="kotlin.commit.message.validation.enabled" defaultValue="true"
+                 description="Enables commit messages validation for kotlin plugin"/>
   </extensions>
   <extensions defaultExtensionNs="JavaScript.JsonSchema">
     <ProviderFactory implementation="org.jetbrains.idea.devkit.themes.ThemeJsonSchemaProviderFactory"/>

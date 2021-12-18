@@ -2,21 +2,44 @@
 package com.intellij.ui.dsl.builder
 
 import com.intellij.ide.BrowserUtil
-import org.jetbrains.annotations.ApiStatus
+import com.intellij.ui.dsl.gridLayout.Gaps
+import javax.swing.JComponent
 import javax.swing.event.HyperlinkEvent
 
 /**
  * Component properties for UI DSL
  */
-@ApiStatus.Experimental
 enum class DslComponentProperty {
   /**
-   * A mark that component is a label created by [Row.label]
+   * A mark that component is a label of a row, see [Panel.row]
+   *
+   * Value: true
    */
-  ROW_LABEL
+  ROW_LABEL,
+
+  /**
+   * Custom visual paddings, which are used instead of [JComponent.getInsets]
+   *
+   * Value: [Gaps]
+   */
+  VISUAL_PADDINGS
 }
 
-@ApiStatus.Experimental
+/**
+ * Default comment width
+ */
+const val DEFAULT_COMMENT_WIDTH = 70
+
+/**
+ * Text uses word wrap if there is no enough width
+ */
+const val MAX_LINE_LENGTH_WORD_WRAP = -1
+
+/**
+ * Text is not wrapped and uses only html markup like <br>
+ */
+const val MAX_LINE_LENGTH_NO_WRAP = Int.MAX_VALUE
+
 fun interface HyperlinkEventAction {
 
   companion object {

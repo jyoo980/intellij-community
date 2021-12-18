@@ -4,6 +4,7 @@ package com.intellij.psi;
 import com.intellij.codeInsight.AnnotationTargetUtil;
 import com.intellij.core.JavaPsiBundle;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.impl.source.resolve.graphInference.PsiPolyExpressionUtil;
@@ -914,7 +915,7 @@ public final class LambdaUtil {
         PsiExpression function = replacer.apply(lambdaCopy);
         if (function == null) return false;
         JavaResolveResult resultCopy = copyCall.resolveMethodGenerics();
-        if (resultCopy.getElement() != oldTarget) return false;
+        if (!oldTarget.getManager().areElementsEquivalent(resultCopy.getElement(), oldTarget)) return false;
         String copyMessage = resultCopy instanceof MethodCandidateInfo ? ((MethodCandidateInfo)resultCopy).getInferenceErrorMessage() : null;
         if (!Objects.equals(origErrorMessage, copyMessage)) return false;
         if (function instanceof PsiFunctionalExpression) {
@@ -937,6 +938,15 @@ public final class LambdaUtil {
             return false;
           }
         }
+      }
+    }
+    else if (PsiPolyExpressionUtil.isInAssignmentOrInvocationContext(lambda)) {
+      PsiType origType = lambda.getFunctionalInterfaceType();
+      if (origType != null) {
+        PsiLambdaExpression lambdaCopy = (PsiLambdaExpression)copyWithExpectedType(lambda, origType);
+        PsiExpression replacement = replacer.apply(lambdaCopy);
+        PsiType type = replacement.getType();
+        return type != null && origType.isAssignableFrom(type);
       }
     }
     return true;

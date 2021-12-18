@@ -1,4 +1,6 @@
-// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+@file:Suppress("ReplaceGetOrSet", "ReplacePutWithAssignment")
+
 package com.intellij.openapi.wm.impl
 
 import com.intellij.configurationStore.deserializeInto
@@ -22,6 +24,7 @@ import com.intellij.openapi.wm.impl.FrameInfoHelper.Companion.isFullScreenSuppor
 import com.intellij.openapi.wm.impl.FrameInfoHelper.Companion.isMaximized
 import com.intellij.openapi.wm.impl.welcomeScreen.WelcomeFrame
 import com.intellij.ui.ComponentUtil
+import com.intellij.ui.ExperimentalUI
 import com.intellij.ui.ScreenUtil
 import com.sun.jna.platform.WindowUtils
 import org.jdom.Element
@@ -413,6 +416,11 @@ class WindowManagerImpl : WindowManagerEx(), PersistentStateComponentWithModific
     // left stripe
     list.add(info(id = "Project", weight = 0.25f, contentUiType = ToolWindowContentUiType.COMBO))
 
+    // right stripe
+    anchor = ToolWindowAnchor.RIGHT
+    order = 0
+    list.add(info(id = "Notifications", weight = 0.25f))
+
     // bottom stripe
     anchor = ToolWindowAnchor.BOTTOM
     order = 0
@@ -439,7 +447,7 @@ class WindowManagerImpl : WindowManagerEx(), PersistentStateComponentWithModific
       defaultFrameInfoHelper.copyFrom(info)
     }
     state.getChild(DesktopLayout.TAG)?.let {
-      layout.readExternal(it)
+      layout.readExternal(it, ExperimentalUI.isNewUI())
     }
   }
 

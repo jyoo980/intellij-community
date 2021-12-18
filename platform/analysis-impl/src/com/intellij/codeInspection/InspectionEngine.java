@@ -11,7 +11,9 @@ import com.intellij.codeInspection.reference.RefElement;
 import com.intellij.codeInspection.reference.RefEntity;
 import com.intellij.codeInspection.reference.RefManagerImpl;
 import com.intellij.codeInspection.reference.RefVisitor;
+import com.intellij.concurrency.ConcurrentCollectionFactory;
 import com.intellij.concurrency.JobLauncher;
+import com.intellij.diagnostic.PluginException;
 import com.intellij.lang.Language;
 import com.intellij.lang.MetaLanguage;
 import com.intellij.lang.injection.InjectedLanguageManager;
@@ -27,12 +29,16 @@ import com.intellij.util.CommonProcessors;
 import com.intellij.util.PairProcessor;
 import com.intellij.util.Processor;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.HashingStrategy;
 import com.intellij.util.containers.SmartHashSet;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public final class InspectionEngine {
@@ -79,7 +85,7 @@ public final class InspectionEngine {
   }
 
   /**
-   * @deprecated use {@link #inspectEx(List, PsiFile, TextRange, boolean, boolean, ProgressIndicator, PairProcessor)}
+   * @deprecated use {@link #inspectEx(List, PsiFile, TextRange, TextRange, boolean, boolean, boolean, ProgressIndicator, PairProcessor)}
    */
   @Deprecated
   // returns map (toolName -> problem descriptors)
@@ -89,7 +95,7 @@ public final class InspectionEngine {
                                                                         boolean isOnTheFly,
                                                                         @NotNull ProgressIndicator indicator) {
     Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> map =
-      inspectEx(toolWrappers, file, file.getTextRange(), isOnTheFly, false, indicator, PairProcessor.alwaysTrue());
+      inspectEx(toolWrappers, file, file.getTextRange(), file.getTextRange(), isOnTheFly, false, true, indicator, PairProcessor.alwaysTrue());
     return map.entrySet().stream().map(e->Pair.create(e.getKey().getShortName(), e.getValue())).collect(Collectors.toMap(p->p.getFirst(), p->p.getSecond()));
   }
 
@@ -98,47 +104,58 @@ public final class InspectionEngine {
   public static Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> inspectEx(@NotNull List<? extends LocalInspectionToolWrapper> toolWrappers,
                                                                                    @NotNull PsiFile file,
                                                                                    @NotNull TextRange restrictRange,
+                                                                                   @NotNull TextRange priorityRange,
                                                                                    boolean isOnTheFly,
-                                                                                   boolean inspectInjectedPsi, @NotNull ProgressIndicator indicator,
+                                                                                   boolean inspectInjectedPsi,
+                                                                                   boolean ignoreSuppressedElements,
+                                                                                   @NotNull ProgressIndicator indicator,
                                                                                    // when returned true -> add to the holder, false -> do not add to the holder
                                                                                    @NotNull PairProcessor<? super LocalInspectionToolWrapper, ? super ProblemDescriptor> foundDescriptorCallback) {
     if (toolWrappers.isEmpty()) return Collections.emptyMap();
 
     List<Divider.DividedElements> allDivided = new ArrayList<>();
-    Divider.divideInsideAndOutsideAllRoots(file, restrictRange, file.getTextRange(), __ -> true, new CommonProcessors.CollectProcessor<>(allDivided));
+    Divider.divideInsideAndOutsideAllRoots(file, restrictRange, priorityRange, __ -> true, new CommonProcessors.CollectProcessor<>(allDivided));
 
     List<PsiElement> elements = ContainerUtil.concat(
       (List<List<PsiElement>>)ContainerUtil.map(allDivided, d -> ContainerUtil.concat(d.inside, d.outside, d.parents)));
 
-    Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> map = inspectElements(toolWrappers, file, restrictRange, isOnTheFly, indicator, elements, foundDescriptorCallback);
+    Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> map = inspectElements(toolWrappers, file, restrictRange, ignoreSuppressedElements, isOnTheFly, indicator, elements, foundDescriptorCallback);
     if (inspectInjectedPsi) {
       InjectedLanguageManager injectedLanguageManager = InjectedLanguageManager.getInstance(file.getProject());
-      List<PsiFile> injectedFiles = new ArrayList<>();
+      List<Pair<PsiFile, PsiElement>> injectedFiles = new ArrayList<>();
       for (PsiElement element : elements) {
         if (element instanceof PsiLanguageInjectionHost) {
           List<Pair<PsiElement, TextRange>> files = injectedLanguageManager.getInjectedPsiFiles(element);
           if (files != null) {
             for (Pair<PsiElement, TextRange> pair : files) {
               PsiFile injectedFile = (PsiFile)pair.getFirst();
-              injectedFiles.add(injectedFile);
+              injectedFiles.add(Pair.create(injectedFile, element));
             }
           }
         }
       }
-      Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> withInjected = Collections.synchronizedMap(map);
-      if (!JobLauncher.getInstance().invokeConcurrentlyUnderProgress(injectedFiles, indicator, injectedFile -> {
+      if (!JobLauncher.getInstance().invokeConcurrentlyUnderProgress(injectedFiles, indicator, pair -> {
+        PsiFile injectedFile = pair.getFirst();
+        PsiElement host = pair.getSecond();
         List<PsiElement> injectedElements = new ArrayList<>();
         Set<String> injectedDialects = new HashSet<>();
         getAllElementsAndDialectsFrom(injectedFile, injectedElements, injectedDialects);
         Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> result =
-          inspectElements(toolWrappers, injectedFile, injectedFile.getTextRange(), isOnTheFly, indicator, injectedElements,
+          inspectElements(toolWrappers, injectedFile, injectedFile.getTextRange(), isOnTheFly, indicator, ignoreSuppressedElements,
+                          injectedElements,
                           injectedDialects, foundDescriptorCallback);
-        withInjected.putAll(result);
+        for (Map.Entry<LocalInspectionToolWrapper, List<ProblemDescriptor>> entry : result.entrySet()) {
+          LocalInspectionToolWrapper toolWrapper = entry.getKey();
+          List<ProblemDescriptor> descriptors = entry.getValue();
+          List<ProblemDescriptor> filtered = ignoreSuppressedElements ? ContainerUtil.filter(descriptors, descriptor -> !toolWrapper.getTool().isSuppressedFor(host)) : descriptors;
+          // in case two injected fragments contain result of the same inspection, concatenate them
+          // assume map is ConcurrentHashMap here, otherwise synchronization would be needed
+          map.merge(toolWrapper, filtered, (oldList, newList)->ContainerUtil.concat(oldList, newList));
+        }
         return true;
       })) {
         throw new ProcessCanceledException();
       }
-      map = withInjected;
     }
 
     return map;
@@ -188,151 +205,192 @@ public final class InspectionEngine {
 
   // returns map tool -> list of descriptors found
   public static @NotNull Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> inspectElements(@NotNull List<? extends LocalInspectionToolWrapper> toolWrappers,
-                                                                              @NotNull PsiFile file,
-                                                                              @NotNull TextRange restrictRange,
-                                                                              boolean isOnTheFly,
-                                                                              @NotNull ProgressIndicator indicator,
-                                                                              @NotNull List<? extends PsiElement> elements,
-                                                                              // when returned true -> add to the holder, false -> do not add to the holder
-                                                                              @NotNull PairProcessor<? super LocalInspectionToolWrapper, ? super ProblemDescriptor> foundDescriptorCallback) {
-    return inspectElements(toolWrappers, file, restrictRange, isOnTheFly, indicator, elements, calcElementDialectIds(elements), foundDescriptorCallback);
+                                                                                                  @NotNull PsiFile file,
+                                                                                                  @NotNull TextRange restrictRange,
+                                                                                                  boolean ignoreSuppressedElements,
+                                                                                                  boolean isOnTheFly,
+                                                                                                  @NotNull ProgressIndicator indicator,
+                                                                                                  @NotNull List<? extends PsiElement> elements,
+                                                                                                  // when returned true -> add to the holder, false -> do not add to the holder
+                                                                                                  @NotNull PairProcessor<? super LocalInspectionToolWrapper, ? super ProblemDescriptor> foundDescriptorCallback) {
+    return inspectElements(toolWrappers, file, restrictRange, isOnTheFly, indicator, ignoreSuppressedElements, elements, calcElementDialectIds(elements),
+                           foundDescriptorCallback);
   }
+
+  @ApiStatus.Internal
+  public static void withSession(@NotNull PsiFile file,
+                                 @NotNull TextRange restrictRange,
+                                 @NotNull TextRange priorityRange,
+                                 boolean isOnTheFly,
+                                 @NotNull Consumer<? super LocalInspectionToolSession> runnable) {
+    LocalInspectionToolSession session = new LocalInspectionToolSession(file, priorityRange);
+    runnable.accept(session);
+  }
+
+  private static final Set<String> ourToolsWithInformationProblems = ConcurrentCollectionFactory.createConcurrentSet(HashingStrategy.canonical());
+
   private static @NotNull Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> inspectElements(@NotNull List<? extends LocalInspectionToolWrapper> toolWrappers,
-                                                                               @NotNull PsiFile file,
-                                                                               @NotNull TextRange restrictRange,
-                                                                               boolean isOnTheFly,
-                                                                               @NotNull ProgressIndicator indicator,
-                                                                               @NotNull List<? extends PsiElement> elements,
-                                                                               @NotNull Set<String> elementDialectIds,
-                                                                               // when returned true -> add to the holder, false -> do not add to the holder
-                                                                               @NotNull PairProcessor<? super LocalInspectionToolWrapper, ? super ProblemDescriptor> foundDescriptorCallback) {
-    LocalInspectionToolSession session = new LocalInspectionToolSession(file, restrictRange.getStartOffset(), restrictRange.getEndOffset());
-
-    toolWrappers = filterToolsApplicableByLanguage(toolWrappers, elementDialectIds);
+                                                                                                   @NotNull PsiFile file,
+                                                                                                   @NotNull TextRange restrictRange,
+                                                                                                   boolean isOnTheFly,
+                                                                                                   @NotNull ProgressIndicator indicator,
+                                                                                                   boolean ignoreSuppressedElements,
+                                                                                                   @NotNull List<? extends PsiElement> elements,
+                                                                                                   @NotNull Set<String> elementDialectIds,
+                                                                                                   // when returned true -> add to the holder, false -> do not add to the holder
+                                                                                                   @NotNull PairProcessor<? super LocalInspectionToolWrapper, ? super ProblemDescriptor> foundDescriptorCallback) {
     Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> resultDescriptors = new ConcurrentHashMap<>();
-    Processor<LocalInspectionToolWrapper> processor = wrapper -> {
-      ProblemsHolder holder = new ProblemsHolder(InspectionManager.getInstance(file.getProject()), file, isOnTheFly){
-        @Override
-        public void registerProblem(@NotNull ProblemDescriptor problemDescriptor) {
-          if (foundDescriptorCallback.process(wrapper, problemDescriptor)) {
-            super.registerProblem(problemDescriptor);
+    withSession(file, restrictRange, restrictRange, isOnTheFly, session -> {
+      List<LocalInspectionToolWrapper> filtered = filterToolsApplicableByLanguage(toolWrappers, elementDialectIds);
+      Processor<LocalInspectionToolWrapper> processor = toolWrapper -> {
+        ProblemsHolder holder = new ProblemsHolder(InspectionManager.getInstance(file.getProject()), file, isOnTheFly){
+          @Override
+          public void registerProblem(@NotNull ProblemDescriptor descriptor) {
+            if (!isOnTheFly) {
+              ProblemHighlightType highlightType = descriptor.getHighlightType();
+              if (highlightType == ProblemHighlightType.INFORMATION) {
+                String shortName = toolWrapper.getShortName();
+                if (ourToolsWithInformationProblems.add(shortName)) {
+                  String message = "Tool #" + shortName + " (" + toolWrapper.getTool().getClass()+")"+
+                                   " registers 'INFORMATION'-level problem in batch mode on " + file + ". " +
+                                   "Warnings of the 'INFORMATION' level are invisible in the editor and should not become visible in batch mode. " +
+                                   "Moreover, since 'INFORMATION'-level fixes act more like intention actions, they could e.g. change semantics and " +
+                                   "thus should not be suggested for batch transformations";
+                  LocalInspectionEP extension = toolWrapper.getExtension();
+                  if (extension != null) {
+                    LOG.error(new PluginException(message, extension.getPluginDescriptor().getPluginId()));
+                  }
+                  else {
+                    LOG.error(message);
+                  }
+                }
+                return;
+              }
+              if (highlightType == ProblemHighlightType.POSSIBLE_PROBLEM) {
+                return;
+              }
+            }
+
+            if (foundDescriptorCallback.process(toolWrapper, descriptor)) {
+              super.registerProblem(descriptor);
+            }
           }
+        };
+        LocalInspectionTool tool = toolWrapper.getTool();
+        createVisitorAndAcceptElements(tool, holder, isOnTheFly, session, elements);
+
+        tool.inspectionFinished(session, holder);
+
+        if (holder.hasResults()) {
+          List<ProblemDescriptor> descriptors = ContainerUtil.filter(holder.getResults(), descriptor -> {
+            PsiElement element = descriptor.getPsiElement();
+            return element == null || !ignoreSuppressedElements || !SuppressionUtil.inspectionResultSuppressed(element, tool);
+          });
+          resultDescriptors.put(toolWrapper, descriptors);
         }
+
+        return true;
       };
-      LocalInspectionTool tool = wrapper.getTool();
-      createVisitorAndAcceptElements(tool, holder, isOnTheFly, session, elements);
-
-      tool.inspectionFinished(session, holder);
-
-      if (holder.hasResults()) {
-        resultDescriptors.put(wrapper, ContainerUtil.filter(holder.getResults(), descriptor -> {
-          PsiElement element = descriptor.getPsiElement();
-          return element == null || !SuppressionUtil.inspectionResultSuppressed(element, tool);
-        }));
-      }
-
-      return true;
-    };
-    JobLauncher.getInstance().invokeConcurrentlyUnderProgress(toolWrappers, indicator, processor);
+      JobLauncher.getInstance().invokeConcurrentlyUnderProgress(filtered, indicator, processor);
+    });
 
     return resultDescriptors;
   }
 
-  public static @NotNull List<ProblemDescriptor> runInspectionOnFile(@NotNull PsiFile file,
-                                                                     @NotNull InspectionToolWrapper<?, ?> toolWrapper,
-                                                                     @NotNull GlobalInspectionContext inspectionContext) {
+  public static @NotNull @Unmodifiable List<ProblemDescriptor> runInspectionOnFile(@NotNull PsiFile file,
+                                                                                   @NotNull InspectionToolWrapper<?, ?> toolWrapper,
+                                                                                   @NotNull GlobalInspectionContext inspectionContext) {
     InspectionManager inspectionManager = InspectionManager.getInstance(file.getProject());
     toolWrapper.initialize(inspectionContext);
     RefManagerImpl refManager = (RefManagerImpl)inspectionContext.getRefManager();
-    refManager.inspectionReadActionStarted();
-    try {
-      if (toolWrapper instanceof LocalInspectionToolWrapper) {
-        @NotNull Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> problemDescriptors =
-          inspectEx(Collections.singletonList((LocalInspectionToolWrapper)toolWrapper), file, file.getTextRange(), false,
-                    false, new EmptyProgressIndicator(), PairProcessor.alwaysTrue());
+    List<ProblemDescriptor> result = new ArrayList<>();
+    refManager.runInsideInspectionReadAction(() -> {
+      try {
+        if (toolWrapper instanceof LocalInspectionToolWrapper) {
+          Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> problemDescriptors =
+            inspectEx(Collections.singletonList((LocalInspectionToolWrapper)toolWrapper), file, file.getTextRange(), file.getTextRange(),
+                      false,
+                      false, true, new EmptyProgressIndicator(), PairProcessor.alwaysTrue());
 
-        List<ProblemDescriptor> result = new ArrayList<>();
-        for (List<ProblemDescriptor> group : problemDescriptors.values()) {
-          result.addAll(group);
-        }
-        return result;
-      }
-      if (toolWrapper instanceof GlobalInspectionToolWrapper) {
-        GlobalInspectionTool globalTool = ((GlobalInspectionToolWrapper)toolWrapper).getTool();
-        List<ProblemDescriptor> descriptors = new ArrayList<>();
-        if (globalTool instanceof GlobalSimpleInspectionTool) {
-          GlobalSimpleInspectionTool simpleTool = (GlobalSimpleInspectionTool)globalTool;
-          ProblemsHolder problemsHolder = new ProblemsHolder(inspectionManager, file, false);
-          ProblemDescriptionsProcessor collectProcessor = new ProblemDescriptionsProcessor() {
-            @Override
-            public CommonProblemDescriptor[] getDescriptions(@NotNull RefEntity refEntity) {
-              return descriptors.toArray(CommonProblemDescriptor.EMPTY_ARRAY);
-            }
-
-            @Override
-            public void ignoreElement(@NotNull RefEntity refEntity) {
-              throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public void resolveProblem(@NotNull CommonProblemDescriptor descriptor) {
-              throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public void addProblemElement(@Nullable RefEntity refEntity, CommonProblemDescriptor @NotNull ... commonProblemDescriptors) {
-              if (!(refEntity instanceof RefElement)) return;
-              PsiElement element = ((RefElement)refEntity).getPsiElement();
-              convertToProblemDescriptors(element, commonProblemDescriptors, descriptors);
-            }
-
-            @Override
-            public RefEntity getElement(@NotNull CommonProblemDescriptor descriptor) {
-              throw new RuntimeException();
-            }
-          };
-          simpleTool.checkFile(file, inspectionManager, problemsHolder, inspectionContext, collectProcessor);
-          return descriptors;
-        }
-        RefElement fileRef = refManager.getReference(file);
-        AnalysisScope scope = new AnalysisScope(file);
-        assert fileRef != null;
-        fileRef.accept(new RefVisitor(){
-          @Override
-          public void visitElement(@NotNull RefEntity elem) {
-            CommonProblemDescriptor[] elemDescriptors = globalTool.checkElement(elem, scope, inspectionManager, inspectionContext);
-            if (elemDescriptors != null) {
-              convertToProblemDescriptors(file, elemDescriptors, descriptors);
-            }
-
-            for (RefEntity child : elem.getChildren()) {
-              child.accept(this);
-            }
+          for (List<ProblemDescriptor> group : problemDescriptors.values()) {
+            result.addAll(group);
           }
-        });
-        return descriptors;
+        }
+        else if (toolWrapper instanceof GlobalInspectionToolWrapper) {
+          GlobalInspectionTool globalTool = ((GlobalInspectionToolWrapper)toolWrapper).getTool();
+          if (globalTool instanceof GlobalSimpleInspectionTool) {
+            GlobalSimpleInspectionTool simpleTool = (GlobalSimpleInspectionTool)globalTool;
+            ProblemsHolder problemsHolder = new ProblemsHolder(inspectionManager, file, false);
+            ProblemDescriptionsProcessor collectProcessor = new ProblemDescriptionsProcessor() {
+              @Override
+              public CommonProblemDescriptor[] getDescriptions(@NotNull RefEntity refEntity) {
+                return result.toArray(CommonProblemDescriptor.EMPTY_ARRAY);
+              }
+
+              @Override
+              public void ignoreElement(@NotNull RefEntity refEntity) {
+                throw new UnsupportedOperationException();
+              }
+
+              @Override
+              public void resolveProblem(@NotNull CommonProblemDescriptor descriptor) {
+                throw new UnsupportedOperationException();
+              }
+
+              @Override
+              public void addProblemElement(@Nullable RefEntity refEntity, CommonProblemDescriptor @NotNull ... commonProblemDescriptors) {
+                if (!(refEntity instanceof RefElement)) return;
+                PsiElement element = ((RefElement)refEntity).getPsiElement();
+                convertToProblemDescriptors(element, commonProblemDescriptors, result);
+              }
+
+              @Override
+              public RefEntity getElement(@NotNull CommonProblemDescriptor descriptor) {
+                throw new RuntimeException();
+              }
+            };
+            simpleTool.checkFile(file, inspectionManager, problemsHolder, inspectionContext, collectProcessor);
+          }
+          else {
+            RefElement fileRef = refManager.getReference(file);
+            AnalysisScope scope = new AnalysisScope(file);
+            assert fileRef != null;
+            fileRef.accept(new RefVisitor() {
+              @Override
+              public void visitElement(@NotNull RefEntity elem) {
+                CommonProblemDescriptor[] elemDescriptors = globalTool.checkElement(elem, scope, inspectionManager, inspectionContext);
+                if (elemDescriptors != null) {
+                  convertToProblemDescriptors(file, elemDescriptors, result);
+                }
+
+                for (RefEntity child : elem.getChildren()) {
+                  child.accept(this);
+                }
+              }
+            });
+          }
+        }
       }
-    }
-    finally {
-      refManager.inspectionReadActionFinished();
-      toolWrapper.cleanup(file.getProject());
-      inspectionContext.cleanup();
-    }
-    return Collections.emptyList();
+      finally {
+        toolWrapper.cleanup(file.getProject());
+        inspectionContext.cleanup();
+      }
+    });
+    return result;
   }
 
   private static void convertToProblemDescriptors(@NotNull PsiElement element,
                                                   CommonProblemDescriptor @NotNull [] commonProblemDescriptors,
-                                                  @NotNull List<? super ProblemDescriptor> descriptors) {
+                                                  @NotNull List<? super ProblemDescriptor> outDescriptors) {
     for (CommonProblemDescriptor common : commonProblemDescriptors) {
       if (common instanceof ProblemDescriptor) {
-        descriptors.add((ProblemDescriptor)common);
+        outDescriptors.add((ProblemDescriptor)common);
       }
       else {
         ProblemDescriptorBase base =
           new ProblemDescriptorBase(element, element, common.getDescriptionTemplate(), (LocalQuickFix[])common.getFixes(),
                                     ProblemHighlightType.GENERIC_ERROR_OR_WARNING, false, null, false, false);
-        descriptors.add(base);
+        outDescriptors.add(base);
       }
     }
   }

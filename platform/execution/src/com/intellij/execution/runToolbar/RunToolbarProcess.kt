@@ -19,6 +19,10 @@ interface RunToolbarProcess {
     val isAvailable: Boolean
       get() = RegistryManager.getInstance().`is`("ide.widget.toolbar")
 
+    @JvmStatic
+    val isSettingsAvailable: Boolean
+      get() = RegistryManager.getInstance().`is`("ide.widget.toolbar.is.settings.available") && isAvailable
+
     val logNeeded: Boolean
       get() = RegistryManager.getInstance().`is`("ide.widget.toolbar.logging")
 
@@ -40,6 +44,7 @@ interface RunToolbarProcess {
   val ID: String
   val executorId: String
   val name: @Nls String
+  val shortName: @Nls String
 
   val actionId: String
   fun getMainActionId(): String = "main$actionId"

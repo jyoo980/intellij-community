@@ -11,7 +11,6 @@ import com.intellij.openapi.extensions.ExtensionPointDescriptor
 import com.intellij.openapi.extensions.LoadingOrder
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.util.createNonCoalescingXmlStreamReader
-import com.intellij.platform.util.plugins.DataLoader
 import com.intellij.util.NoOpXmlInterner
 import com.intellij.util.XmlInterner
 import com.intellij.util.lang.ZipFilePool
@@ -66,12 +65,12 @@ fun readModuleDescriptor(input: ByteArray,
                               readInto = readInto)
 }
 
-private fun readModuleDescriptor(reader: XMLStreamReader2,
-                                 readContext: ReadModuleContext,
-                                 pathResolver: PathResolver,
-                                 dataLoader: DataLoader,
-                                 includeBase: String?,
-                                 readInto: RawPluginDescriptor?): RawPluginDescriptor {
+internal fun readModuleDescriptor(reader: XMLStreamReader2,
+                                  readContext: ReadModuleContext,
+                                  pathResolver: PathResolver,
+                                  dataLoader: DataLoader,
+                                  includeBase: String?,
+                                  readInto: RawPluginDescriptor?): RawPluginDescriptor {
   try {
     if (reader.eventType != XMLStreamConstants.START_DOCUMENT) {
       throw XMLStreamException("State ${XMLStreamConstants.START_DOCUMENT} is expected, " +
@@ -176,7 +175,7 @@ private fun readRootElementChild(reader: XMLStreamReader2,
       if (descriptor.id == null) {
         descriptor.id = getNullifiedContent(reader)
       }
-      else if (!KNOWN_KOTLIN_PLUGIN_IDS.contains(descriptor.id)) {
+      else if (!KNOWN_KOTLIN_PLUGIN_IDS.contains(descriptor.id) && descriptor.id != "com.intellij") {
         // no warn and no redefinition for kotlin - compiler.xml is a known issue
         LOG.warn("id redefinition (${reader.locationInfo.location})")
         descriptor.id = getNullifiedContent(reader)
@@ -439,6 +438,7 @@ private fun checkXInclude(elementName: String, reader: XMLStreamReader2): Boolea
   return false
 }
 
+@Suppress("DuplicatedCode")
 private fun readExtensionPoints(reader: XMLStreamReader2,
                                 descriptor: RawPluginDescriptor,
                                 readContext: ReadModuleContext,
@@ -537,6 +537,7 @@ private inline fun applyPartialContainer(from: RawPluginDescriptor,
   }
 }
 
+@Suppress("DuplicatedCode")
 private fun readServiceDescriptor(reader: XMLStreamReader2, os: ExtensionDescriptor.Os?): ServiceDescriptor {
   var serviceInterface: String? = null
   var serviceImplementation: String? = null

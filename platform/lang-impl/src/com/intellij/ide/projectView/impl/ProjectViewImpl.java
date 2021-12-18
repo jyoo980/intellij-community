@@ -1,8 +1,9 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.projectView.impl;
 
 import com.intellij.application.options.OptionsApplicabilityFilter;
 import com.intellij.ide.*;
+import com.intellij.ide.bookmark.BookmarksListener;
 import com.intellij.ide.impl.ProjectViewSelectInTarget;
 import com.intellij.ide.projectView.HelpID;
 import com.intellij.ide.projectView.ProjectView;
@@ -781,8 +782,10 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
       content.putUserData(SUB_ID_KEY, subId);
       content.putUserData(ToolWindow.SHOW_CONTENT_ICON, Boolean.TRUE);
       Icon icon = subId != null ? newPane.getPresentableSubIdIcon(subId) : newPane.getIcon();
-      content.setIcon(icon);
-      content.setPopupIcon(icon);
+      if (!ExperimentalUI.isNewToolWindowsStripes()) {
+        content.setIcon(icon);
+        content.setPopupIcon(icon);
+      }
       content.setPreferredFocusedComponent(() -> {
         final AbstractProjectViewPane current = getCurrentProjectViewPane();
         return current != null ? current.getComponentToFocus() : null;
@@ -1835,6 +1838,10 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
           info.apply(pane);
         }
       }
+    }
+    if (withComparator) {
+      // sort nodes in the BookmarksView
+      myProject.getMessageBus().syncPublisher(BookmarksListener.TOPIC).structureChanged(null);
     }
   }
 

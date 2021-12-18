@@ -1,3 +1,5 @@
+import java.util.List;
+
 class Test {
   void testTypePattern1(Object o) {
     o = "fsd";
@@ -41,15 +43,17 @@ class Test {
     }
   }
 
-  void testParenthesizedPattern(String s) {
-    if (s instanceof (<error descr="Pattern type 'String' is the same as expression type">String</error> s1)) {
-      System.out.println(s1);
+  void testInstanceofInForeach(List<Object> list) {
+    for (Object obj : list) {
+      if (obj instanceof String st) {
+      }
     }
   }
 
-  void testDeepParenthesizedPattern(String s) {
-    if (s instanceof ( ((( ((  <error descr="Pattern type 'String' is the same as expression type">String</error> s1)) ))     ) )) {
-      System.out.println(s1);
+  void testInstanceofTotalInForeach(List<Object> list) {
+    for (Object obj : list) {
+      if (obj instanceof <error descr="Pattern type 'Object' is the same as expression type">Object</error> st) {
+      }
     }
   }
 

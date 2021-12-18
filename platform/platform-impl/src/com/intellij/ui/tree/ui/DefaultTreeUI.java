@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ui.tree.ui;
 
 import com.intellij.ide.ui.UISettings;
@@ -50,6 +50,7 @@ import static com.intellij.openapi.application.ApplicationManager.getApplication
 import static com.intellij.openapi.util.SystemInfo.isMac;
 import static com.intellij.openapi.util.registry.Registry.intValue;
 import static com.intellij.openapi.util.registry.Registry.is;
+import static com.intellij.ui.ColorUtil.isDark;
 import static com.intellij.ui.paint.RectanglePainter.DRAW;
 import static com.intellij.ui.paint.RectanglePainter.FILL;
 import static com.intellij.util.EditSourceOnDoubleClickHandler.isExpandPreferable;
@@ -225,6 +226,7 @@ public final class DefaultTreeUI extends BasicTreeUI {
       TreePath path = cache.getPathClosestTo(0, paintBounds.y - insets.top);
       int row = cache.getRowForPath(path);
       if (row >= 0) {
+        boolean dark = isDark(JBUI.CurrentTheme.Tree.BACKGROUND);
         Control.Painter painter = getPainter(tree);
         Rectangle buffer = new Rectangle();
         RenderingHelper helper = new RenderingHelper(tree);
@@ -240,14 +242,26 @@ public final class DefaultTreeUI extends BasicTreeUI {
           boolean selected = tree.isRowSelected(row);
           boolean focused = RenderingUtil.isFocused(tree);
           boolean lead = focused && row == getLeadSelectionRow();
+          boolean selectedControl = selected && focused;
 
           Color background = getBackground(tree, path, row, selected);
           if (background != null) {
             g.setColor(background);
-            g.fillRect(helper.getX(), bounds.y, helper.getWidth(), bounds.height);
+            if (g instanceof Graphics2D && is("ide.experimental.ui.tree.selection") && (selected || row == TreeHoverListener.getHoveredRow(tree))) {
+              int borderOffset = JBUI.scale(12);
+              int rendererOffset = painter.getRendererOffset(control, depth, leaf);
+              int controlOffset = painter.getControlOffset(control, depth, leaf);
+              int left = Math.min(helper.getX() + borderOffset, controlOffset < 0 ? rendererOffset : controlOffset);
+              int right = Math.max(helper.getX() + helper.getWidth() - borderOffset, rendererOffset + bounds.width + JBUI.scale(4));
+              FILL.paint((Graphics2D)g, left, bounds.y, right - left, bounds.height, JBUI.scale(8));
+            }
+            else {
+              g.fillRect(helper.getX(), bounds.y, helper.getWidth(), bounds.height);
+            }
+            if (selectedControl && !dark && !isDark(background)) selectedControl = false;
           }
           int offset = painter.getRendererOffset(control, depth, leaf);
-          painter.paint(tree, g, insets.left, bounds.y, offset, bounds.height, control, depth, leaf, expanded, selected && focused);
+          painter.paint(tree, g, insets.left, bounds.y, offset, bounds.height, control, depth, leaf, expanded, selectedControl);
           // TODO: editingComponent, editingRow ???
           if (editingComponent == null || editingRow != row) {
             int width = helper.getX() + helper.getWidth() - insets.left - offset;

@@ -111,7 +111,9 @@ class XDebugSessionTab3(
 
     myUi.addContent(content, 0, PlaceInGrid.center, false)
 
-    ui.defaults.initContentAttraction(debuggerContentId, XDebuggerUIConstants.LAYOUT_VIEW_BREAKPOINT_CONDITION, LayoutAttractionPolicy.FocusOnce())
+    ui.defaults
+      .initContentAttraction(debuggerContentId, XDebuggerUIConstants.LAYOUT_VIEW_BREAKPOINT_CONDITION, LayoutAttractionPolicy.FocusOnce())
+      .initContentAttraction(debuggerContentId, XDebuggerUIConstants.LAYOUT_VIEW_FINISH_CONDITION, LayoutAttractionPolicy.FocusOnce())
 
     addDebugToolwindowActions(session.project)
 
@@ -123,17 +125,27 @@ class XDebugSessionTab3(
   }
 
   override fun initToolbars(session: XDebugSessionImpl) {
-    (myUi as? RunnerLayoutUiImpl)?.setLeftToolbarVisible(false)
+    val isVerticalToolbar = Registry.get("debugger.new.tool.window.layout.toolbar").isOptionEnabled("Vertical")
+    (myUi as? RunnerLayoutUiImpl)?.setLeftToolbarVisible(isVerticalToolbar)
 
     val toolbar = DefaultActionGroup()
 
     mySingleContentSupplier = object: RunTabSupplier(toolbar) {
+      override fun getToolbarActions(): ActionGroup? {
+        return if (isVerticalToolbar) ActionGroup.EMPTY_GROUP else super.getToolbarActions()
+      }
       override fun getMainToolbarPlace() = ActionPlaces.DEBUGGER_TOOLBAR
       override fun getContentToolbarPlace() = ActionPlaces.DEBUGGER_TOOLBAR
     }
 
     toolbarGroup = toolbar
     updateToolbars()
+
+    if (isVerticalToolbar) {
+      myUi.options.setLeftToolbar(toolbar, ActionPlaces.DEBUGGER_TOOLBAR)
+    } else {
+      myUi.options.setTopLeftToolbar(toolbar, ActionPlaces.DEBUGGER_TOOLBAR)
+    }
   }
 
   fun updateToolbars() {
@@ -197,8 +209,6 @@ class XDebugSessionTab3(
     // Constrains are required as a workaround that puts these actions into the end anyway
     more.add(gear, Constraints(Anchor.BEFORE, ""))
     toolbar.add(more, Constraints(Anchor.BEFORE, ""))
-
-    myUi.options.setTopLeftToolbar(toolbar, ActionPlaces.DEBUGGER_TOOLBAR)
   }
 
   override fun initFocusingVariablesFromFramesView() {

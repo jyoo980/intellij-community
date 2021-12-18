@@ -2,6 +2,7 @@
 package com.intellij.notification.impl.ui
 
 import com.intellij.ide.IdeBundle
+import com.intellij.notification.ActionCenter
 import com.intellij.notification.impl.NotificationsConfigurationImpl
 import com.intellij.openapi.options.ConfigurableUi
 import com.intellij.openapi.ui.DialogPanel
@@ -25,6 +26,7 @@ class NotificationsConfigurableUi(settings: NotificationsConfigurationImpl) : Co
   private lateinit var useBalloonNotifications: JCheckBox
   private lateinit var useSystemNotifications: JCheckBox
   private lateinit var notificationSettings: NotificationSettingsUi
+  private val myDoNotAskConfigurableUi = DoNotAskConfigurableUi()
 
   init {
     ui = panel {
@@ -38,13 +40,22 @@ class NotificationsConfigurableUi(settings: NotificationsConfigurationImpl) : Co
                                           { settings.SYSTEM_NOTIFICATIONS },
                                           { settings.SYSTEM_NOTIFICATIONS = it }).component
       }
-      row {
+      val r = row {
         notificationSettings = NotificationSettingsUi(notificationsList.model.getElementAt(0), useBalloonNotifications.selected)
         cell {
           scrollPane(notificationsList)
         }
         cell(isVerticalFlow = true) {
           component(notificationSettings.ui).withLargeLeftGap().constraints(CCFlags.pushX)
+        }
+      }
+      if (ActionCenter.isEnabled()) {
+        r.largeGapAfter()
+        row {
+          label(IdeBundle.message("notifications.configurable.do.not.ask.title"))
+        }
+        fullRow {
+          component(myDoNotAskConfigurableUi.createComponent())
         }
       }
     }
@@ -68,10 +79,11 @@ class NotificationsConfigurableUi(settings: NotificationsConfigurationImpl) : Co
     notificationsList.model = createNotificationsList().model
     notificationsList.selectedIndex = selectedIndex
     notificationSettings.updateUi(notificationsList.selectedValue)
+    myDoNotAskConfigurableUi.reset()
   }
 
   override fun isModified(settings: NotificationsConfigurationImpl): Boolean {
-    return ui.isModified() || isNotificationsModified()
+    return ui.isModified() || isNotificationsModified() || myDoNotAskConfigurableUi.isModified()
   }
 
   private fun isNotificationsModified(): Boolean {
@@ -97,6 +109,7 @@ class NotificationsConfigurableUi(settings: NotificationsConfigurationImpl) : Co
         settingsWrapper.apply()
       }
     }
+    myDoNotAskConfigurableUi.apply()
   }
 
   override fun getComponent() = ui

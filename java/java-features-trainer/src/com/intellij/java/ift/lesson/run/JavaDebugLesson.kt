@@ -11,13 +11,14 @@ import com.intellij.xdebugger.XDebuggerBundle
 import training.dsl.LessonContext
 import training.dsl.TaskTestContext
 import training.dsl.highlightButtonById
+import training.dsl.restoreChangedSettingsInformer
 import training.learn.lesson.general.run.CommonDebugLesson
 import training.ui.LearningUiManager
 import javax.swing.JEditorPane
 
 class JavaDebugLesson : CommonDebugLesson("java.debug.workflow") {
 
-  override val testScriptProperties = TaskTestContext.TestScriptProperties(duration = 30)
+  override val testScriptProperties = TaskTestContext.TestScriptProperties(duration = 60)
 
   private val demoClassName = JavaRunLessonsUtils.demoClassName
   override val configurationName: String = demoClassName
@@ -26,7 +27,6 @@ class JavaDebugLesson : CommonDebugLesson("java.debug.workflow") {
 
   override val confNameForWatches: String = "Application"
   override val quickEvaluationArgument = "Integer.parseInt"
-  override val expressionToBeEvaluated = "result/input.length"
   override val debuggingMethodName = "findAverage"
   override val methodForStepInto: String = "extractNumber"
   override val stepIntoDirectionToRight = true
@@ -104,6 +104,13 @@ class JavaDebugLesson : CommonDebugLesson("java.debug.workflow") {
   private fun inHotSwapDialog(): Boolean {
     return Thread.currentThread().stackTrace.any { traceElement ->
       traceElement.className.contains("HotSwapUIImpl")
+    }
+  }
+
+  override fun LessonContext.restoreHotSwapStateInformer() {
+    if (!isHotSwapDisabled()) return
+    restoreChangedSettingsInformer {
+      DebuggerSettings.getInstance().RUN_HOTSWAP_AFTER_COMPILE = DebuggerSettings.RUN_HOTSWAP_NEVER
     }
   }
 

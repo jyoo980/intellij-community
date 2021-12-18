@@ -8,8 +8,9 @@ import com.intellij.model.Pointer
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.progress.ProgressManager
-import com.intellij.openapi.progress.runSuspendingAction
+import com.intellij.openapi.progress.runBlockingCancellable
 import kotlinx.coroutines.*
+import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.TestOnly
 
 internal fun DocumentationTarget.documentationRequest(): DocumentationRequest {
@@ -17,7 +18,8 @@ internal fun DocumentationTarget.documentationRequest(): DocumentationRequest {
   return DocumentationRequest(createPointer(), presentation)
 }
 
-internal fun CoroutineScope.computeDocumentationAsync(targetPointer: Pointer<out DocumentationTarget>): Deferred<DocumentationData?> {
+@ApiStatus.Internal
+fun CoroutineScope.computeDocumentationAsync(targetPointer: Pointer<out DocumentationTarget>): Deferred<DocumentationData?> {
   return async(Dispatchers.Default) {
     val documentationResult: DocumentationResult? = readAction {
       targetPointer.dereference()?.computeDocumentation()
@@ -32,7 +34,8 @@ internal fun CoroutineScope.computeDocumentationAsync(targetPointer: Pointer<out
   }
 }
 
-internal suspend fun resolveLink(targetPointer: Pointer<out DocumentationTarget>, url: String): InternalLinkResult {
+@ApiStatus.Internal
+suspend fun resolveLink(targetPointer: Pointer<out DocumentationTarget>, url: String): InternalLinkResult {
   return withContext(Dispatchers.Default) {
     readAction {
       doResolveLink(targetPointer, url)
@@ -43,7 +46,12 @@ internal suspend fun resolveLink(targetPointer: Pointer<out DocumentationTarget>
 private fun doResolveLink(targetPointer: Pointer<out DocumentationTarget>, url: String): InternalLinkResult {
   val target = targetPointer.dereference() ?: return InternalLinkResult.InvalidTarget
   val result = resolveLink(target, url) ?: return InternalLinkResult.CannotResolve
-  return InternalLinkResult.OK(result.target.documentationRequest())
+  @Suppress("REDUNDANT_ELSE_IN_WHEN")
+  return when (result) {
+    is ResolvedTarget -> InternalLinkResult.Request(result.target.documentationRequest())
+    is UpdateContent -> InternalLinkResult.Updater(result.updater)
+    else -> error("Unexpected result: $result") // this fixes Kotlin incremental compilation
+  }
 }
 
 internal fun resolveLink(target: DocumentationTarget, url: String): LinkResult? {
@@ -56,7 +64,7 @@ internal fun resolveLink(target: DocumentationTarget, url: String): LinkResult? 
 
 @TestOnly
 fun computeDocumentation(targetPointer: Pointer<out DocumentationTarget>): DocumentationData? {
-  return runSuspendingAction {
+  return runBlockingCancellable {
     withContext(Dispatchers.Default) {
       computeDocumentationAsync(targetPointer).await()
     }

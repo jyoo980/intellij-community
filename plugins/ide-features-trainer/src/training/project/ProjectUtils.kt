@@ -7,28 +7,27 @@ import com.intellij.ide.RecentProjectsManager
 import com.intellij.ide.ReopenProjectAction
 import com.intellij.ide.impl.OpenProjectTask
 import com.intellij.ide.impl.ProjectUtil
-import com.intellij.ide.impl.setTrusted
+import com.intellij.ide.impl.TrustedPaths
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.notification.Notification
-import com.intellij.notification.NotificationGroup
 import com.intellij.notification.NotificationType
-import com.intellij.openapi.application.ApplicationNamesInfo
-import com.intellij.openapi.application.PathManager
-import com.intellij.openapi.application.invokeAndWaitIfNeeded
-import com.intellij.openapi.application.invokeLater
+import com.intellij.openapi.application.*
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.fileChooser.ex.FileChooserDialogImpl
-import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
+import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.progress.runBackgroundableTask
 import com.intellij.openapi.project.NOTIFICATIONS_SILENT_MODE
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.Consumer
 import com.intellij.util.io.createDirectories
@@ -39,6 +38,7 @@ import training.lang.LangManager
 import training.lang.LangSupport
 import training.learn.LearnBundle
 import training.util.featureTrainerVersion
+import training.util.iftNotificationGroup
 import java.io.File
 import java.io.FileFilter
 import java.io.IOException
@@ -46,6 +46,7 @@ import java.io.PrintWriter
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.CompletableFuture
 import kotlin.io.path.getLastModifiedTime
 import kotlin.io.path.name
 
@@ -150,10 +151,10 @@ object ProjectUtils {
                                           langSupport: LangSupport,
                                           openProjectTask: OpenProjectTask,
                                           postInitCallback: (learnProject: Project) -> Unit) {
-    val copied = copyLearningProjectFiles(contentRoot, langSupport)
-    if (!copied) return
-    createVersionFile(contentRoot)
-    openOrImportLearningProject(contentRoot, openProjectTask, langSupport) {
+    val actualContentRoot = copyLearningProjectFiles(contentRoot, langSupport)
+    if (actualContentRoot == null) return
+    createVersionFile(actualContentRoot)
+    openOrImportLearningProject(actualContentRoot, openProjectTask, langSupport) {
       updateLearningModificationTimestamp(it)
       postInitCallback(it)
     }
@@ -189,17 +190,21 @@ object ProjectUtils {
           GeneralSettings.getInstance().confirmOpenNewProject = confirmOpenNewProject
         }
       }
-      project.setTrusted(true)
       postInitCallback(project)
     }
   }
 
-  private fun copyLearningProjectFiles(newContentDirectory: Path, langSupport: LangSupport): Boolean {
+  /**
+   * Returns [newContentDirectory] if learning project files successfully copied on the first try,
+   *         path to the directory chosen by user if learning project files successfully copied on the second try,
+   *         null if user closed the directory chooser.
+   */
+  private fun copyLearningProjectFiles(newContentDirectory: Path, langSupport: LangSupport): Path? {
     var targetDirectory = newContentDirectory
     if (!langSupport.copyLearningProjectFiles(targetDirectory.toFile())) {
       targetDirectory = invokeAndWaitIfNeeded {
         chooseParentDirectoryForLearningProject(langSupport)
-      } ?: return false
+      } ?: return null
       if (!langSupport.copyLearningProjectFiles(targetDirectory.toFile())) {
         invokeLater {
           Messages.showInfoMessage(LearnBundle.message("learn.project.initializing.cannot.create.message"),
@@ -208,9 +213,10 @@ object ProjectUtils {
         error("Cannot create learning demo project. See LOG files for details.")
       }
     }
-    val path = langSupport.getLearningProjectPath(targetDirectory).toAbsolutePath().toString()
-    LangManager.getInstance().setLearningProjectPath(langSupport, path)
-    return true
+    val path = langSupport.getLearningProjectPath(targetDirectory)
+    LangManager.getInstance().setLearningProjectPath(langSupport, path.toAbsolutePath().toString())
+    TrustedPaths.getInstance().setProjectPathTrusted(path, true)
+    return targetDirectory
   }
 
   fun learningProjectUrl(langSupport: LangSupport) =
@@ -258,10 +264,37 @@ object ProjectUtils {
 
   private fun versionFile(dest: Path) = dest.resolve(FEATURE_TRAINER_VERSION)
 
+  fun markDirectoryAsSourcesRoot(project: Project, pathToSources: String) {
+    val modules = ModuleManager.getInstance(project).modules
+    if (modules.size > 1) {
+      thisLogger().error("The learning project has more than one module: ${modules.map { it.name }}")
+    }
+    val module = modules.first()
+    val sourcesPath = project.basePath!! + '/' + pathToSources
+    val sourcesRoot = LocalFileSystem.getInstance().refreshAndFindFileByPath(sourcesPath)
+    if (sourcesRoot == null) {
+      val status = when {
+        !File(sourcesPath).exists() -> "does not exist"
+        File(sourcesPath).isDirectory -> "existed directory"
+        else -> "it is regular file"
+      }
+      error("Failed to find directory with source files: $sourcesPath ($status)")
+    }
+    val rootsModel = ModuleRootManager.getInstance(module).modifiableModel
+    val contentEntry = rootsModel.contentEntries.find {
+      val contentEntryFile = it.file
+      contentEntryFile != null && VfsUtilCore.isAncestor(contentEntryFile, sourcesRoot, false)
+    } ?: error("Failed to find content entry for file: ${sourcesRoot.name}")
+
+    contentEntry.addSourceFolder(sourcesRoot, false)
+    runWriteAction {
+      rootsModel.commit()
+      project.save()
+    }
+  }
+
   fun createSdkDownloadingNotification(): Notification {
-    val notificationGroup = NotificationGroup.findRegisteredGroup("IDE Features Trainer")
-                            ?: error("Not found notificationGroup for IDE Features Trainer")
-    return notificationGroup.createNotification(LearnBundle.message("learn.project.initializing.jdk.download.notification.title"),
+    return iftNotificationGroup.createNotification(LearnBundle.message("learn.project.initializing.jdk.download.notification.title"),
                                                 LearnBundle.message("learn.project.initializing.jdk.download.notification.message",
                                                                     ApplicationNamesInfo.getInstance().fullProductName),
                                                 NotificationType.INFORMATION)
@@ -274,65 +307,75 @@ object ProjectUtils {
   }
 
   fun restoreProject(languageSupport: LangSupport, project: Project) {
-    val stamp = PropertiesComponent.getInstance(project).getValue(LEARNING_PROJECT_MODIFICATION)?.toLong() ?: 0
-    val needReplace = mutableListOf<Path>()
-    val validContent = mutableListOf<Path>()
-    val directories = mutableListOf<Path>()
-    val root = getProjectRoot(project)
-    val contentRootPath = languageSupport.getContentRootPath(root.toNioPath())
+    val done = CompletableFuture<Boolean>()
+    AppUIExecutor.onWriteThread().withDocumentsCommitted(project).submit {
+      try {
+        val stamp = PropertiesComponent.getInstance(project).getValue(LEARNING_PROJECT_MODIFICATION)?.toLong() ?: 0
+        val needReplace = mutableListOf<Path>()
+        val validContent = mutableListOf<Path>()
+        val directories = mutableListOf<Path>()
+        val root = getProjectRoot(project)
+        val contentRootPath = languageSupport.getContentRootPath(root.toNioPath())
 
-    invokeAndWaitIfNeeded {
-      FileDocumentManager.getInstance().saveAllDocuments()
-    }
-
-    for (path in Files.walk(contentRootPath)) {
-      if (contentRootPath.relativize(path).any { file ->
-          file.name == ".idea" ||
-          file.name == "git" ||
-          file.name == ".git" ||
-          file.name == ".gitignore" ||
-          file.name == "venv" ||
-          file.name == FEATURE_TRAINER_VERSION ||
-          file.name.endsWith(".iml")
-        }) continue
-      if (path.isDirectory()) {
-        directories.add(path)
-      }
-      else {
-        if (path.getLastModifiedTime().toMillis() > stamp) {
-          needReplace.add(path)
+        for (path in Files.walk(contentRootPath)) {
+          if (contentRootPath.relativize(path).any { file ->
+              file.name == ".idea" ||
+              file.name == "git" ||
+              file.name == ".git" ||
+              file.name == ".gitignore" ||
+              file.name == "venv" ||
+              file.name == FEATURE_TRAINER_VERSION ||
+              file.name.endsWith(".iml")
+            }) continue
+          if (path.isDirectory()) {
+            directories.add(path)
+          }
+          else {
+            if (path.getLastModifiedTime().toMillis() > stamp) {
+              needReplace.add(path)
+            }
+            else {
+              validContent.add(path)
+            }
+          }
         }
-        else {
-          validContent.add(path)
+
+        var modified = false
+
+        for (path in needReplace) {
+          path.delete()
+          modified = true
         }
+
+        val contentRoodDirectory = contentRootPath.toFile()
+        languageSupport.copyLearningProjectFiles(contentRoodDirectory, FileFilter {
+          val path = it.toPath()
+          val needCopy = needReplace.contains(path) || !validContent.contains(path)
+          modified = needCopy || modified
+          needCopy
+        })
+
+        for (path in directories) {
+          if (isEmptyDir(path)) {
+            modified = true
+            path.delete()
+          }
+        }
+
+        if (modified) {
+          VfsUtil.markDirtyAndRefresh(false, true, true, root)
+          PropertiesComponent.getInstance(project).setValue(LEARNING_PROJECT_MODIFICATION, System.currentTimeMillis().toString())
+        }
+        done.complete(true)
+      }
+      catch (e: Exception) {
+        done.complete(false)
+        throw e
       }
     }
-
-    var modified = false
-
-    for (path in needReplace) {
-      path.delete()
-      modified = true
-    }
-
-    val contentRoodDirectory = contentRootPath.toFile()
-    languageSupport.copyLearningProjectFiles(contentRoodDirectory, FileFilter {
-      val path = it.toPath()
-      val needCopy = needReplace.contains(path) || !validContent.contains(path)
-      modified = needCopy || modified
-      needCopy
-    })
-
-    for (path in directories) {
-      if (isEmptyDir(path)) {
-        modified = true
-        path.delete()
-      }
-    }
-
-    if (modified) {
-      VfsUtil.markDirtyAndRefresh(false, true, true, root)
-      PropertiesComponent.getInstance(project).setValue(LEARNING_PROJECT_MODIFICATION, System.currentTimeMillis().toString())
+    val success = done.get()
+    if (!success) {
+      thisLogger().error("IFT Learning project files refresh failed")
     }
   }
 

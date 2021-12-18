@@ -6,6 +6,11 @@ import com.intellij.ui.scale.TestScaleHelper
 import org.intellij.plugins.markdown.editor.tables.TableTestUtils.runWithChangedSettings
 
 class MarkdownTableTabTest: LightPlatformCodeInsightTestCase() {
+  override fun tearDown() {
+    TestScaleHelper.restoreRegistryProperties()
+    super.tearDown()
+  }
+
   fun `test single tab forward`() {
     // language=Markdown
     val before = """
@@ -17,7 +22,7 @@ class MarkdownTableTabTest: LightPlatformCodeInsightTestCase() {
     val after = """
     | none | none |
     |------|------|
-    | some |<caret> some |
+    | some | <caret>some |
     """.trimIndent()
     doTest(before, after)
   }
@@ -33,9 +38,27 @@ class MarkdownTableTabTest: LightPlatformCodeInsightTestCase() {
     val after = """
     | none | none | none |
     |------|------|------|
-    | some | some |<caret> some |
+    | some | some | <caret>some |
     """.trimIndent()
     doTest(before, after, count = 2)
+  }
+
+  fun `test multiple tabs forward to next row`() {
+    // language=Markdown
+    val before = """
+    | none | none | none |
+    |------|------|------|
+    | some<caret> | some | some |
+    | some | some | some |
+    """.trimIndent()
+    // language=Markdown
+    val after = """
+    | none | none | none |
+    |------|------|------|
+    | some | some | some |
+    | some | some | <caret>some |
+    """.trimIndent()
+    doTest(before, after, count = 5)
   }
 
   fun `test single tab backward`() {
@@ -49,7 +72,7 @@ class MarkdownTableTabTest: LightPlatformCodeInsightTestCase() {
     val after = """
     | none | none |
     |------|------|
-    | some <caret>| some |
+    | some<caret> | some |
     """.trimIndent()
     doTest(before, after, forward = false)
   }
@@ -65,9 +88,27 @@ class MarkdownTableTabTest: LightPlatformCodeInsightTestCase() {
     val after = """
     | none | none | none |
     |------|------|------|
-    | some <caret>| some | some |
+    | some<caret> | some | some |
     """.trimIndent()
     doTest(before, after, count = 2, forward = false)
+  }
+
+  fun `test multiple tabs backward to previous row`() {
+    // language=Markdown
+    val before = """
+    | none | none | none |
+    |------|------|------|
+    | some | some | some |
+    | some | some | some<caret> |
+    """.trimIndent()
+    // language=Markdown
+    val after = """
+    | none | none | none |
+    |------|------|------|
+    | some<caret> | some | some |
+    | some | some | some |
+    """.trimIndent()
+    doTest(before, after, count = 5, forward = false)
   }
 
   private fun doTest(content: String, expected: String, count: Int = 1, forward: Boolean = true) {

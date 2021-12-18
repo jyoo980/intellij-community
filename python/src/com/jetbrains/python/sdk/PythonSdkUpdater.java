@@ -140,7 +140,7 @@ public class PythonSdkUpdater implements StartupActivity.Background {
         Trigger.LOG.debug("Starting SDK refresh for '" + mySdkKey + "' triggered by " + Trigger.getCauseByTrace(myRequestData.myTraceback));
       }
       try {
-        if (Experiments.getInstance().isFeatureEnabled("python.use.targets.api.for.run.configurations")) {
+        if (Experiments.getInstance().isFeatureEnabled("python.use.targets.api")) {
           PyTargetsIntrospectionFacade targetsFacade = new PyTargetsIntrospectionFacade(sdk, myProject);
           String version = targetsFacade.getInterpreterVersion(indicator);
           commitSdkVersionIfChanged(sdk, version);
@@ -572,17 +572,12 @@ public class PythonSdkUpdater implements StartupActivity.Background {
 
   private static boolean isUnderModuleRootsButNotSdk(@NotNull VirtualFile file, @NotNull Set<VirtualFile> moduleRoots, @NotNull Sdk sdk) {
     if (VfsUtilCore.isUnder(file, moduleRoots)) {
-      final String binaryPath = sdk.getHomePath();
-      if (binaryPath == null) {
-        return true;
-      }
-
-      final File envRoot = PythonSdkUtil.getVirtualEnvRoot(binaryPath);
+      final VirtualFile envRoot = PySdkExtKt.getInnerVirtualEnvRoot(sdk);
       if (envRoot == null) {
         return true;
       }
 
-      return !VfsUtilCore.isAncestor(envRoot, VfsUtilCore.virtualToIoFile(file), false);
+      return !VfsUtilCore.isAncestor(envRoot, file, false);
     }
 
     return false;

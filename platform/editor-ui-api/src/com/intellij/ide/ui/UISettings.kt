@@ -116,6 +116,13 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       state.dndWithPressedAltOnly = value
     }
 
+  var separateMainMenu: Boolean
+    get() = SystemInfo.isWindows && state.separateMainMenu
+    set(value) {
+      state.separateMainMenu = value
+      state.showMainToolbar = value
+    }
+
   var useSmallLabelsOnTabs: Boolean
     get() = state.useSmallLabelsOnTabs
     set(value) {
@@ -168,7 +175,6 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     get() = state.showNavigationBar
     set(value) {
       state.showNavigationBar = value
-      ToolbarSettings.Instance.navBarVisible = value
     }
 
   var showMembersInNavigationBar: Boolean

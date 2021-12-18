@@ -43,7 +43,6 @@ import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.builder.Cell
-import com.intellij.ui.dsl.builder.buttonGroup
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.builder.selected
 import com.intellij.ui.dsl.gridLayout.HorizontalAlign
@@ -152,20 +151,21 @@ class EditorOptionsPanel : BoundCompositeConfigurable<UnnamedConfigurable>(messa
         row {
           chkEnableWheelFontSizeChange = checkBox(enableWheelFontChange).component
         }
-        buttonGroup({ editorSettings.isWheelFontChangePersistent }, { editorSettings.isWheelFontChangePersistent = it }, indent = true) {
+        buttonsGroup(indent = true) {
           row {
             radioButton(message("radio.enable.ctrl.mousewheel.changes.font.size.current"), false)
             radioButton(message("radio.enable.ctrl.mousewheel.changes.font.size.all"), true)
           }.enabledIf(chkEnableWheelFontSizeChange.selected)
-        }
+        }.bind({ editorSettings.isWheelFontChangePersistent }, { editorSettings.isWheelFontChangePersistent = it })
         row {
           checkBox(enableDnD)
-          commentNoWrap(message("checkbox.enable.drag.n.drop.functionality.in.editor.comment"))
+          comment(message("checkbox.enable.drag.n.drop.functionality.in.editor.comment"))
         }
       }
       group(message("group.soft.wraps")) {
         row {
           val useSoftWraps = checkBox(cdUseSoftWrapsAtEditor)
+            .gap(RightGap.SMALL)
           textField()
             .bindText({ editorSettings.softWrapFileMasks }, { editorSettings.softWrapFileMasks = it })
             .columns(COLUMNS_LARGE)
@@ -189,8 +189,7 @@ class EditorOptionsPanel : BoundCompositeConfigurable<UnnamedConfigurable>(messa
         row { checkBox(cdShowSoftWrapsOnlyOnCaretLine) }
       }
       group(message("group.virtual.space")) {
-        row {
-          label(message("checkbox.allow.placement.of.caret.label"))
+        row(message("checkbox.allow.placement.of.caret.label")) {
           checkBox(virtualSpace)
           checkBox(caretInsideTabs)
         }
@@ -202,11 +201,10 @@ class EditorOptionsPanel : BoundCompositeConfigurable<UnnamedConfigurable>(messa
       }
       group(message("editor.options.scrolling")) {
         row { checkBox(cdSmoothScrolling) }
-        buttonGroup(editorSettings::isRefrainFromScrolling,
-          editorSettings::setRefrainFromScrolling, message("editor.options.prefer.scrolling.editor.label")) {
+        buttonsGroup(message("editor.options.prefer.scrolling.editor.label")) {
           row { radioButton(message("editor.options.prefer.scrolling.editor.canvas.to.keep.caret.line.centered"), value = false) }
           row { radioButton(message("editor.options.prefer.moving.caret.line.to.minimize.editor.scrolling"), value = true) }
-        }
+        }.bind(editorSettings::isRefrainFromScrolling, editorSettings::setRefrainFromScrolling)
       }
       group(message("group.richcopy")) {
         row {
@@ -214,7 +212,7 @@ class EditorOptionsPanel : BoundCompositeConfigurable<UnnamedConfigurable>(messa
           val copyShortcutText = copyShortcut?.let { " (" + KeymapUtil.getShortcutText(it) + ")" } ?: ""
           checkBox(message("checkbox.enable.richcopy.label", copyShortcutText))
             .bindSelected(richCopySettings::isEnabled, richCopySettings::setEnabled)
-          commentNoWrap(message("checkbox.enable.richcopy.comment"))
+          comment(message("checkbox.enable.richcopy.comment"))
         }
         row(message("combobox.richcopy.color.scheme")) {
           val schemes = listOf(RichCopySettings.ACTIVE_GLOBAL_SCHEME_MARKER) +
@@ -236,6 +234,7 @@ class EditorOptionsPanel : BoundCompositeConfigurable<UnnamedConfigurable>(messa
         lateinit var stripEnabledBox: Cell<JBCheckBox>
         row {
           stripEnabledBox = checkBox(cdStripTrailingSpacesEnabled)
+            .gap(RightGap.SMALL)
           val model = DefaultComboBoxModel(
             arrayOf(
               EditorSettingsExternalizable.STRIP_TRAILING_SPACES_CHANGED,
@@ -306,11 +305,10 @@ class EditorCodeEditingConfigurable : BoundCompositeConfigurable<ErrorOptionsPro
       }
       if (!EditorOptionsPageCustomizer.EP_NAME.extensions().anyMatch { it.shouldHideRefactoringsSection() }) {
         group(message("group.refactorings")) {
-          buttonGroup(editorSettings::isVariableInplaceRenameEnabled,
-            editorSettings::setVariableInplaceRenameEnabled, message("radiogroup.rename.local.variables")) {
+          buttonsGroup(message("radiogroup.rename.local.variables")) {
             row { radioButton(message("radiobutton.rename.local.variables.inplace"), value = true) }
             row { radioButton(message("radiobutton.rename.local.variables.in.dialog"), value = false) }.bottomGap(BottomGap.SMALL)
-          }
+          }.bind(editorSettings::isVariableInplaceRenameEnabled, editorSettings::setVariableInplaceRenameEnabled)
           row { checkBox(preselectCheckBox) }
           row { checkBox(showInlineDialogForCheckBox) }
         }

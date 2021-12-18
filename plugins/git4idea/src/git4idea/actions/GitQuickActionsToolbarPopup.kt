@@ -3,89 +3,103 @@ package git4idea.actions
 
 import com.intellij.dvcs.repo.VcsRepositoryMappingListener
 import com.intellij.icons.AllIcons
-import com.intellij.ide.navigationToolbar.experimental.NewToolbarPaneListener
-import com.intellij.openapi.actionSystem.ActionToolbar
-import com.intellij.openapi.actionSystem.AnAction
-import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.Presentation
+import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.impl.ActionButtonWithText
-import com.intellij.openapi.application.invokeLater
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Key
-import com.intellij.openapi.util.NlsActions
 import com.intellij.openapi.vcs.actions.VcsQuickActionsToolbarPopup
 import com.intellij.util.IconUtil
 import com.intellij.util.ui.JBInsets
-import git4idea.branch.GitBranchUtil
 import git4idea.i18n.GitBundle
+import git4idea.repo.GitRepositoryManager
 import java.awt.Color
 import java.awt.Dimension
 import java.awt.Insets
+import javax.swing.Icon
 import javax.swing.JComponent
 
 /**
  * Git implementation of the quick popup action
  */
-internal class GitQuickActionsToolbarPopup : VcsQuickActionsToolbarPopup() {
-  init {
-    templatePresentation.text = GitBundle.message("action.Vcs.ShowMoreActions.text")
+@Service
+class GitQuickActionsToolbarService {
+  var gitMappingInitialized = false
+    private set
+
+  fun initializationComplete() {
+    gitMappingInitialized = true
   }
+  companion object {
+    fun getInstance(project: Project): GitQuickActionsToolbarService = project.getService(GitQuickActionsToolbarService::class.java)
+  }
+}
 
-  private class MyActionButtonWithText(action: AnAction,
-                                       presentation: Presentation,
-                                       place: String,
-                                       minimumSize: Dimension) : ActionButtonWithText(action, presentation, place, minimumSize) {
-    public override fun getText(): @NlsActions.ActionText String {
-      val iconWithText = myPresentation.getClientProperty(KEY_ICON_WITH_TEXT)
-      return if (iconWithText == true) {
-        super.getText() + " "
-      }
-      else {
-        ""
-      }
-    }
+internal class GitQuickActionsToolbarPopup : VcsQuickActionsToolbarPopup() {
 
-    override fun getInactiveTextColor(): Color {
-      return foreground
-    }
+  private inner class MyActionButtonWithText(
+    action: AnAction,
+    presentation: Presentation,
+    place: String,
+  ) : ActionButtonWithText(action, presentation, place, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE) {
 
-    override fun getInsets(): Insets {
-      return JBInsets(0, 0, 0, 0)
-    }
+    override fun getInactiveTextColor(): Color = foreground
+
+    override fun getInsets(): Insets = JBInsets(0, 0, 0, 0)
   }
 
   override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
-    return MyActionButtonWithText(this, presentation, place, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE)
+    return MyActionButtonWithText(this, presentation.apply { text = "" }, place)
   }
 
   override fun update(e: AnActionEvent) {
-    val project = e.project
+    if (e.place !== ActionPlaces.MAIN_TOOLBAR) {
+      e.presentation.isEnabledAndVisible = false
+      return
+    }
+    e.project ?: return
     val presentation = e.presentation
-    val repo = project?.let { GitBranchUtil.getCurrentRepository(it) }
-    if (repo == null) {
-      presentation.putClientProperty(KEY_ICON_WITH_TEXT, true)
-      presentation.icon = AllIcons.Vcs.BranchNode
+    val instance = GitQuickActionsToolbarService.getInstance(e.project!!)
+    if (!instance.gitMappingInitialized) {
+      presentation.isEnabledAndVisible = false
+      return
     }
     else {
-      var icon = AllIcons.Actions.More
-      if (icon.iconWidth < ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE.width) {
-        icon = IconUtil.toSize(icon, ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE.width,
-          ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE.height)
-      }
-      presentation.putClientProperty(KEY_ICON_WITH_TEXT, false)
-      presentation.icon = icon
+      presentation.isEnabledAndVisible = true
     }
-  }
 
-  companion object {
-    private val KEY_ICON_WITH_TEXT = Key.create<Boolean>("KEY_ICON_WITH_TEXT")
+    val repo = GitRepositoryManager.getInstance(e.project!!).repositories.isNotEmpty()
+
+    presentation.icon = if (repo) {
+      AllIcons.Actions.More.toSize(ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE)
+    }
+    else {
+      AllIcons.Vcs.BranchNode
+    }
+
+    presentation.text = if (repo) {
+      ""
+    }
+    else {
+      GitBundle.message("action.Vcs.Toolbar.ShowMoreActions.text") + " "
+    }
   }
 
   class MyGitRepositoryListener(val project: Project) : VcsRepositoryMappingListener {
     override fun mappingChanged() {
-      invokeLater {
-        if (!project.isDisposed) project.messageBus.syncPublisher(NewToolbarPaneListener.TOPIC).stateChanged()
-      }
+      GitQuickActionsToolbarService.getInstance(project).initializationComplete()
+    }
+  }
+
+  private fun Icon.toSize(dimension: Dimension): Icon {
+    return if (iconWidth < dimension.width) {
+      IconUtil.toSize(
+        this,
+        dimension.width,
+        dimension.height,
+      )
+    }
+    else {
+      this
     }
   }
 }

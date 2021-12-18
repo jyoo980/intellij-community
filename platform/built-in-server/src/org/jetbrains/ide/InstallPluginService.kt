@@ -15,7 +15,7 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.ui.AppIcon
 import com.intellij.util.PlatformUtils
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread
-import com.intellij.util.concurrency.annotations.RequiresNoReadLock
+import com.intellij.util.concurrency.annotations.RequiresReadLockAbsence
 import com.intellij.util.io.getHostName
 import com.intellij.util.io.origin
 import com.intellij.util.net.NetUtils
@@ -36,6 +36,13 @@ internal class InstallPluginService : RestService() {
 
   var isAvailable = true
   private val trustedHosts = System.getProperty("idea.api.install.hosts.trusted", "").split(",")
+
+  private val trustedPredefinedHosts = setOf(
+    "marketplace.jetbrains.com",
+    "plugins.jetbrains.com",
+    "package-search.services.jetbrains.com",
+    "package-search.jetbrains.com"
+  )
 
   override fun execute(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): String? {
     val pluginId = getStringParameter("pluginId", urlDecoder)
@@ -61,7 +68,7 @@ internal class InstallPluginService : RestService() {
   }
 
   @RequiresBackgroundThread
-  @RequiresNoReadLock
+  @RequiresReadLockAbsence
   private fun checkCompatibility(
     request: FullHttpRequest,
     context: ChannelHandlerContext,
@@ -153,9 +160,8 @@ internal class InstallPluginService : RestService() {
     }
 
     return (originHost != null && (
-      listOf("plugins.jetbrains.com", "package-search.services.jetbrains.com", "package-search.jetbrains.com").contains(originHost) ||
+      trustedPredefinedHosts.contains(originHost) ||
       trustedHosts.contains(originHost) ||
-      originHost.endsWith(".dev.marketplace.intellij.net") ||
       NetUtils.isLocalhost(originHost))) || super.isHostTrusted(request, urlDecoder)
   }
 }

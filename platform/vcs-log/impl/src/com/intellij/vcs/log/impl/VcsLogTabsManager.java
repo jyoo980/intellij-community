@@ -29,10 +29,7 @@ import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collection;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public class VcsLogTabsManager {
   private static final Logger LOG = Logger.getInstance(VcsLogTabsManager.class);
@@ -53,9 +50,10 @@ public class VcsLogTabsManager {
       @Override
       public void logCreated(@NotNull VcsLogManager manager) {
         myIsLogDisposing = false;
+        Map<String, VcsLogManager.LogWindowKind> savedTabs = myUiProperties.getTabs();
         ApplicationManager.getApplication().invokeLater(() -> {
           if (LOG.assertTrue(!Disposer.isDisposed(manager), "Attempting to open tabs on disposed VcsLogManager")) {
-            reopenLogTabs(manager);
+            reopenLogTabs(manager, savedTabs);
           }
         }, ModalityState.NON_MODAL, o -> manager != VcsProjectLog.getInstance(project).getLogManager());
       }
@@ -68,8 +66,8 @@ public class VcsLogTabsManager {
   }
 
   @RequiresEdt
-  private void reopenLogTabs(@NotNull VcsLogManager manager) {
-    myUiProperties.getTabs().forEach((id, kind) -> {
+  private void reopenLogTabs(@NotNull VcsLogManager manager, @NotNull Map<String, VcsLogManager.LogWindowKind> tabs) {
+    tabs.forEach((id, kind) -> {
       if (kind == VcsLogManager.LogWindowKind.EDITOR) {
         openEditorLogTab(id, false, null);
       }
@@ -91,7 +89,7 @@ public class VcsLogTabsManager {
   @NotNull
   MainVcsLogUi openAnotherLogTab(@NotNull VcsLogManager manager, @NotNull VcsLogFilterCollection filters,
                                  @NotNull VcsLogManager.LogWindowKind kind) {
-    String tabId = generateTabId(myProject);
+    String tabId = generateTabId(manager);
     myUiProperties.resetState(tabId);
     if (kind == VcsLogManager.LogWindowKind.EDITOR) {
       FileEditor[] editors = openEditorLogTab(tabId, true, filters);
@@ -152,9 +150,9 @@ public class VcsLogTabsManager {
 
   @NotNull
   @NonNls
-  private static String generateTabId(@NotNull Project project) {
-    Set<String> existingIds = ContainerUtil.union(VcsLogContentUtil.getExistingLogIds(project),
-                                                  VcsLogEditorUtilKt.getExistingLogIds(project));
+  private static String generateTabId(@NotNull VcsLogManager manager) {
+    Set<String> existingIds = ContainerUtil.map2Set(manager.getLogUis(), VcsLogUi::getId);
+
     String newId;
     do {
       newId = UUID.randomUUID().toString();

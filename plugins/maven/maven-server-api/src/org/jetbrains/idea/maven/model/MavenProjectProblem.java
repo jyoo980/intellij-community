@@ -15,6 +15,8 @@
  */
 package org.jetbrains.idea.maven.model;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.io.File;
 import java.io.Serializable;
 import java.text.MessageFormat;
@@ -25,7 +27,7 @@ import java.util.LinkedHashSet;
 public class MavenProjectProblem implements Serializable {
   //todo: this enum values are write-only now
   public enum ProblemType {
-    SYNTAX, STRUCTURE, DEPENDENCY, PARENT, SETTINGS_OR_PROFILES
+    SYNTAX, STRUCTURE, DEPENDENCY, PARENT, SETTINGS_OR_PROFILES, REPOSITORY_BLOCKED, REPOSITORY
   }
 
   private final boolean myRecoverable;
@@ -75,7 +77,7 @@ public class MavenProjectProblem implements Serializable {
     return myRecoverable;
   }
 
-  public String getDescription() {
+  public @Nullable String getDescription() {
     return myDescription;
   }
 

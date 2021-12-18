@@ -41,6 +41,8 @@ public final class SystemInfo {
   public static final boolean isAzulJvm = Strings.indexOfIgnoreCase(JAVA_VENDOR, "Azul", 0) >= 0;
   public static final boolean isJetBrainsJvm = Strings.indexOfIgnoreCase(JAVA_VENDOR, "JetBrains", 0) >= 0;
 
+  public static final boolean isMetalRendering = isMac && Boolean.getBoolean("sun.java2d.metal");
+
   @SuppressWarnings("SpellCheckingInspection")
   private static boolean isCrostini() {
     return new File("/dev/.cros_milestone").exists();
@@ -72,7 +74,10 @@ public final class SystemInfo {
     }
   }
 
-  public static final boolean isMacSystemMenu = isMac && "true".equals(System.getProperty("apple.laf.useScreenMenuBar"));
+  public static final boolean isAppleSystemMenu = isMac && Boolean.getBoolean("apple.laf.useScreenMenuBar");
+  public static final boolean isJBSystemMenu = isMac && Boolean.getBoolean("jbScreenMenuBar.enabled");
+
+  public static final boolean isMacSystemMenu = isAppleSystemMenu || isJBSystemMenu;
 
   public static final boolean isFileSystemCaseSensitive = SystemInfoRt.isFileSystemCaseSensitive;
 

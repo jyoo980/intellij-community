@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon.impl.analysis;
 
 import com.intellij.codeHighlighting.Pass;
@@ -1221,6 +1221,9 @@ public class HighlightVisitorImpl extends JavaElementVisitor implements Highligh
       if (!myHolder.hasErrorResults() && resolved instanceof PsiModifierListOwner) {
         ref.accept(myPreviewFeatureVisitor);
       }
+      if (!myHolder.hasErrorResults()) {
+        HighlightMethodUtil.checkAmbiguousConstructorCall(ref, resolved, ref.getParent(), myHolder, myJavaSdkVersion);
+      }
     }
   }
 
@@ -1438,6 +1441,9 @@ public class HighlightVisitorImpl extends JavaElementVisitor implements Highligh
         }
         catch (IndexNotReadyException ignored) { }
       }
+      if (!myHolder.hasErrorResults()) {
+        myHolder.add(HighlightUtil.checkVarTypeSelfReferencing((PsiVariable)resolved, expression));
+      }
     }
 
     PsiElement parent = expression.getParent();
@@ -1527,7 +1533,7 @@ public class HighlightVisitorImpl extends JavaElementVisitor implements Highligh
     if (method instanceof PsiJvmMember && !result.isAccessible()) {
       String accessProblem = HighlightUtil.accessProblemDescription(expression, method, result);
       HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(expression).descriptionAndTooltip(accessProblem).create();
-      HighlightFixUtil.registerAccessQuickFixAction((PsiJvmMember)method, expression, info, result.getCurrentFileResolveScope());
+      HighlightFixUtil.registerAccessQuickFixAction((PsiJvmMember)method, expression, info, result.getCurrentFileResolveScope(), null);
       myHolder.add(info);
     }
     else {
@@ -1898,6 +1904,7 @@ public class HighlightVisitorImpl extends JavaElementVisitor implements Highligh
   @Override
   public void visitTypeElement(PsiTypeElement type) {
     if (!myHolder.hasErrorResults()) myHolder.add(HighlightUtil.checkIllegalType(type));
+    if (!myHolder.hasErrorResults()) myHolder.add(HighlightUtil.checkVarTypeApplicability(type));
     if (!myHolder.hasErrorResults()) myHolder.add(GenericsHighlightUtil.checkReferenceTypeUsedAsTypeArgument(type, myLanguageLevel));
     if (!myHolder.hasErrorResults()) myHolder.add(GenericsHighlightUtil.checkWildcardUsage(type));
     if (!myHolder.hasErrorResults()) type.accept(myPreviewFeatureVisitor);

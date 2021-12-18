@@ -572,18 +572,13 @@ public class UnusedDeclarationInspectionBase extends GlobalInspectionTool {
 
     for (RefElement entry : getEntryPointsManager(context).getEntryPoints(refManager)) {
       try {
-        codeScanner.needToLog = true;
+        if (Objects.requireNonNull(context.getUserData(PHASE_KEY)) == 1) {
+          codeScanner.needToLog = true;
+        }
         entry.accept(codeScanner);
       }
       catch (StackOverflowPreventedException e) {
-        // to prevent duplicates
-        if (Objects.requireNonNull(context.getUserData(PHASE_KEY)) == 1) {
-          String path = codeScanner.composePath();
-          if (path != null) {
-            LOG.warn(e.getMessage());
-            LOG.warn(path);
-          }
-        }
+        LOG.warn(e.getMessage());
       }
       finally {
         codeScanner.clearLogs();
@@ -610,45 +605,16 @@ public class UnusedDeclarationInspectionBase extends GlobalInspectionTool {
 
     // todo to be deleted
     private boolean needToLog = false;
-    private final Set<RefElement> refElements = new LinkedHashSet<>();
-    private static final int MAX_VISITED_NODES = 200;
-    private int visitedCounter = 0;
-
-    private void logIfNotOverflowed(@NotNull RefElement element) {
-      if (!needToLog) return;
-      boolean added = refElements.add(element);
-      String errorMessage;
-      if (++visitedCounter < MAX_VISITED_NODES) {
-        if (added) return;
-        errorMessage = "Cycle is detected";
-      }
-      else {
-        // just in case, probably we have too long path
-        errorMessage = "Stack frames limit is exceeded";
-      }
-      // maybe the graph could be deeper, so we take only bounded amount of stack frames just in case
-      throw new StackOverflowPreventedException(errorMessage);
-    }
-
-    private String composePath() {
-      if (visitedCounter < MAX_VISITED_NODES) return null;
-      StringJoiner result = new StringJoiner(" -> ");
-      refElements.forEach(el -> result.add(log(el)));
-      return result.toString();
-    }
-
-    private void removeNode(@NotNull RefElement refElement) {
-      if (!needToLog) return;
-      refElements.remove(refElement);
-      visitedCounter--;
-    }
+    private final List<List<RefElement>> paths = new ArrayList<>();
+    private int temporaryDepth = 0;
+    private static int MAX_DEPTH = 400;
 
     private void clearLogs() {
-      visitedCounter = 0;
-      refElements.clear();
+      temporaryDepth = 0;
+      paths.clear();
     }
 
-    private static String log(@NotNull RefElement element) {
+    static String log(@NotNull RefElement element) {
       RefEntity owner = element.getOwner();
       return String.format("%s %s (owner: %s %s)", element.getClass().getSimpleName(), element.getName(),
                            owner.getClass().getSimpleName(), owner.getName());
@@ -738,16 +704,43 @@ public class UnusedDeclarationInspectionBase extends GlobalInspectionTool {
 
     private void makeContentReachable(RefJavaElementImpl refElement) {
       refElement.setReachable(true);
-      logIfNotOverflowed(refElement);
-      for (RefElement refCallee : refElement.getOutReferences()) {
-        refCallee.accept(this);
-        removeNode(refCallee);
-      }
+      makeReachable(refElement);
     }
 
     private void makeClassInitializersReachable(@Nullable RefClass refClass) {
-      if (refClass != null) {
-        for (RefElement refCallee : refClass.getOutReferences()) {
+      makeReachable(refClass);
+    }
+
+    private void makeReachable(@Nullable RefElement refElement) {
+      if (refElement == null) return;
+      if (needToLog) {
+        if (temporaryDepth == 0) {
+          paths.add(new ArrayList<>());
+        }
+        List<RefElement> lastPath = paths.get(paths.size() - 1);
+        if (lastPath.contains(refElement)) {
+          return;
+        }
+        else {
+          lastPath.add(refElement);
+        }
+        if (lastPath.size() > MAX_DEPTH) {
+          throw new StackOverflowPreventedException("Stack frames limit is exceeded");
+        }
+
+        int counter = 0;
+        for (RefElement refCallee : refElement.getOutReferences()) {
+          if (++counter > 1 && !(refCallee instanceof RefParameter)) {
+            ArrayList<RefElement> copy = new ArrayList<>(lastPath.subList(0, temporaryDepth + 1));
+            paths.add(copy);
+          }
+          temporaryDepth++;
+          refCallee.accept(this);
+          temporaryDepth--;
+        }
+      }
+      else {
+        for (RefElement refCallee : refElement.getOutReferences()) {
           refCallee.accept(this);
         }
       }

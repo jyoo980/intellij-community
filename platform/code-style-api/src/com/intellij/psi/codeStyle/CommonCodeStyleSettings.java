@@ -173,7 +173,7 @@ public class CommonCodeStyleSettings {
   }
 
   public void writeExternal(Element element) {
-    LanguageCodeStyleProvider provider = CodeStyleSettingsService.getLanguageCodeStyleProvider(getLanguage());
+    LanguageCodeStyleProvider provider = LanguageCodeStyleProvider.forLanguage(getLanguage());
     if (provider != null) {
       writeExternal(element, provider);
     }
@@ -241,6 +241,8 @@ public class CommonCodeStyleSettings {
    */
   public boolean LINE_COMMENT_ADD_SPACE = false;
   public boolean BLOCK_COMMENT_ADD_SPACE = false;
+
+  public boolean LINE_COMMENT_ADD_SPACE_ON_REFORMAT = false;
 
   public boolean KEEP_LINE_BREAKS = true;
 

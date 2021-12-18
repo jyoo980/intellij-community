@@ -35,7 +35,9 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.progress.impl.CoreProgressManager;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.projectRoots.*;
+import com.intellij.openapi.projectRoots.ex.JavaSdkUtil;
 import com.intellij.openapi.projectRoots.impl.JavaAwareProjectJdkTableImpl;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.ProjectRootManager;
@@ -66,11 +68,15 @@ import org.jetbrains.idea.maven.buildtool.MavenSyncConsole;
 import org.jetbrains.idea.maven.dom.MavenDomUtil;
 import org.jetbrains.idea.maven.execution.MavenRunnerSettings;
 import org.jetbrains.idea.maven.execution.SyncBundle;
-import org.jetbrains.idea.maven.externalSystemIntegration.output.importproject.quickfixes.CleanBrokenArtifactsAndReimportQuickFix;
-import org.jetbrains.idea.maven.model.*;
+import org.jetbrains.idea.maven.model.MavenConstants;
+import org.jetbrains.idea.maven.model.MavenId;
+import org.jetbrains.idea.maven.model.MavenPlugin;
+import org.jetbrains.idea.maven.model.MavenRemoteRepository;
 import org.jetbrains.idea.maven.project.*;
-import org.jetbrains.idea.maven.server.*;
-import org.jetbrains.idea.maven.wizards.MavenProjectBuilder;
+import org.jetbrains.idea.maven.server.MavenEmbedderWrapper;
+import org.jetbrains.idea.maven.server.MavenServerEmbedder;
+import org.jetbrains.idea.maven.server.MavenServerManager;
+import org.jetbrains.idea.maven.server.MavenServerUtil;
 import org.xml.sax.Attributes;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
@@ -85,7 +91,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -98,6 +106,7 @@ import static com.intellij.openapi.util.io.JarUtil.loadProperties;
 import static com.intellij.openapi.util.text.StringUtil.*;
 import static com.intellij.util.xml.NanoXmlBuilder.stop;
 import static icons.ExternalSystemIcons.Task;
+import static org.apache.commons.lang.StringUtils.EMPTY;
 
 public class MavenUtil {
   public static final String INTELLIJ_PLUGIN_ID = "org.jetbrains.idea.maven";
@@ -118,6 +127,7 @@ public class MavenUtil {
   public static final String LIB_DIR = "lib";
   public static final String CLIENT_ARTIFACT_SUFFIX = "-client";
   public static final String CLIENT_EXPLODED_ARTIFACT_SUFFIX = CLIENT_ARTIFACT_SUFFIX + " exploded";
+  protected static final String PROP_FORCED_M2_HOME = "idea.force.m2.home";
 
 
   @SuppressWarnings("unchecked")
@@ -207,15 +217,6 @@ public class MavenUtil {
     }
   }
 
-  public static void runDumbAware(@NotNull Project project, @NotNull Runnable r) {
-    if (DumbService.isDumbAware(r)) {
-      r.run();
-    }
-    else {
-      DumbService.getInstance(project).runWhenSmart(DisposeAwareRunnable.create(r, project));
-    }
-  }
-
   public static void runWhenInitialized(@NotNull Project project, @NotNull Runnable runnable) {
     if (project.isDisposed()) return;
 
@@ -224,16 +225,11 @@ public class MavenUtil {
       return;
     }
 
-    if (!project.isInitialized()) {
-      StartupManager.getInstance(project).runAfterOpened(runnable);
-      return;
-    }
-
-    runDumbAware(project, runnable);
+    StartupManager.getInstance(project).runAfterOpened(runnable);
   }
 
   public static boolean isNoBackgroundMode() {
-    if (shouldRunTasksAsynchronouslyInTests()) {
+    if (shouldRunTasksAsynchronouslyInTests() || Registry.is("maven.new.import")) {
       return false;
     }
     return (ApplicationManager.getApplication().isUnitTestMode()
@@ -801,6 +797,10 @@ public class MavenUtil {
   public static File resolveLocalRepository(@Nullable String overriddenLocalRepository,
                                             @Nullable String overriddenMavenHome,
                                             @Nullable String overriddenUserSettingsFile) {
+    String forcedM2Home = System.getProperty(PROP_FORCED_M2_HOME);
+    if (forcedM2Home != null) {
+      return new File(forcedM2Home);
+    }
     File result = null;
     if (!isEmptyOrSpaces(overriddenLocalRepository)) result = new File(overriddenLocalRepository);
     if (result == null) {
@@ -844,6 +844,24 @@ public class MavenUtil {
     relPath = classifier == null ? relPath + "." + extension : relPath + "-" + classifier + "." + extension;
 
     return new File(localRepository, relPath);
+  }
+
+  @Nullable
+  public static java.nio.file.Path getArtifactPath(@NotNull java.nio.file.Path localRepository,
+                                                   @NotNull MavenId id,
+                                                   @NotNull String extension,
+                                                   @Nullable String classifier) {
+    if (id.getGroupId() == null || id.getArtifactId() == null || id.getVersion() == null) {
+      return null;
+    }
+    String[] artifactPath = id.getGroupId().split("\\.");
+    for (String path : artifactPath) {
+      localRepository = localRepository.resolve(path);
+    }
+    return localRepository
+      .resolve(id.getArtifactId())
+      .resolve(id.getVersion())
+      .resolve(id.getArtifactId() + "-" + id.getVersion() + (classifier == null ? "." + extension : "-" + classifier + "." + extension));
   }
 
   @Nullable
@@ -1073,47 +1091,12 @@ public class MavenUtil {
     return res;
   }
 
-  public static void notifyMavenProblems(@NotNull Project project) {
-    MavenProjectsManager projectsManager = MavenProjectsManager.getInstance(project);
-    MavenSyncConsole syncConsole = projectsManager.getSyncConsole();
-    for (MavenProject mavenProject : projectsManager.getProjects()) {
-      for (MavenProjectProblem problem : mavenProject.getProblems()) {
-        syncConsole.showProblem(problem);
-      }
-    }
-  }
-
-  public static void notifySyncForUnresolved(@NotNull Project project, @NotNull Collection<MavenProjectReaderResult> results) {
-    Set<MavenArtifact> unresolvedArtifacts = new HashSet<>();
-    for (MavenProjectReaderResult result : results) {
-      if (result.mavenModel.getDependencies() != null) {
-        for (MavenArtifact artifact : result.mavenModel.getDependencies()) {
-          if (!MavenArtifactUtilKt.resolved(artifact)) {
-            unresolvedArtifacts.add(artifact);
-          }
-        }
-      }
-    }
-
-    if (unresolvedArtifacts.isEmpty()) {
-      return;
-    }
-
-    MavenSyncConsole syncConsole = MavenProjectsManager.getInstance(project).getSyncConsole();
-    List<java.nio.file.Path> files = ContainerUtil.map(unresolvedArtifacts, a -> a.getFile().toPath().getParent());
-    CleanBrokenArtifactsAndReimportQuickFix fix = new CleanBrokenArtifactsAndReimportQuickFix(files);
-    for (MavenArtifact artifact : unresolvedArtifacts) {
-      syncConsole.getListener(MavenServerProgressIndicator.ResolveType.DEPENDENCY)
-        .showBuildIssue(artifact.getMavenId().getKey(), fix);
-    }
-  }
-
   public static boolean newModelEnabled(Project project) {
     return Registry.is(MAVEN_NEW_PROJECT_MODEL_KEY, false);
   }
 
-  public static boolean isProjectTrustedEnoughToImport(Project project, boolean askConfirmation) {
-    return ExternalSystemUtil.confirmLoadingUntrustedProject(project, askConfirmation, SYSTEM_ID);
+  public static boolean isProjectTrustedEnoughToImport(Project project) {
+    return ExternalSystemUtil.confirmLoadingUntrustedProject(project, SYSTEM_ID);
   }
 
   public static void restartMavenConnectors(Project project) {
@@ -1135,7 +1118,7 @@ public class MavenUtil {
     try {
       final CRC32 crc = new CRC32();
 
-      SAXParser parser = SAXParserFactory.newInstance().newSAXParser();
+      SAXParser parser = SAXParserFactory.newDefaultInstance().newSAXParser();
       parser.getXMLReader().setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
       parser.parse(in, new DefaultHandler() {
 
@@ -1420,7 +1403,7 @@ public class MavenUtil {
       Sdk res = ProjectRootManager.getInstance(project).getProjectSdk();
 
       if (res == null) {
-        res = getProjectJDKOnImportingStageWhileJdkIsNotSet(project);
+        res =  suggestProjectSdk(project);
       }
 
       if (res != null && res.getSdkType() instanceof JavaSdkType) {
@@ -1442,9 +1425,6 @@ public class MavenUtil {
     throw new InvalidSdkException(name);
   }
 
-  private static Sdk getProjectJDKOnImportingStageWhileJdkIsNotSet(Project project) {
-    return MavenProjectBuilder.suggestProjectSdk(project);
-  }
 
   @Nullable
   protected static Sdk getSdkByExactName(@NotNull String name) {
@@ -1484,5 +1464,45 @@ public class MavenUtil {
   public static boolean isWrapper(@NotNull MavenGeneralSettings settings) {
     return MavenServerManager.WRAPPED_MAVEN.equals(settings.getMavenHome()) ||
            StringUtil.equals(settings.getMavenHome(), MavenProjectBundle.message("maven.wrapper.version.title"));
+  }
+
+  public static void setupProjectSdk(@NotNull Project project) {
+    if (ProjectRootManager.getInstance(project).getProjectSdk() == null) {
+      ApplicationManager.getApplication().runWriteAction(() -> {
+        Sdk projectSdk = suggestProjectSdk(project);
+        if (projectSdk == null) return;
+        JavaSdkUtil.applyJdkToProject(project, projectSdk);
+      });
+    }
+  }
+
+  @Nullable
+  public static Sdk suggestProjectSdk(@NotNull Project project) {
+    Project defaultProject = ProjectManager.getInstance().getDefaultProject();
+    ProjectRootManager defaultProjectManager = ProjectRootManager.getInstance(defaultProject);
+    Sdk defaultProjectSdk = defaultProjectManager.getProjectSdk();
+    if (defaultProjectSdk != null) return null;
+    ProjectJdkTable projectJdkTable = ProjectJdkTable.getInstance();
+    SdkType sdkType = ExternalSystemJdkUtil.getJavaSdkType();
+    return projectJdkTable.getSdksOfType(sdkType).stream()
+      .filter(it -> it.getHomePath() != null && JdkUtil.checkForJre(it.getHomePath()))
+      .filter(it -> MavenWslUtil.tryGetWslDistributionForPath(it.getHomePath()) == MavenWslUtil.tryGetWslDistribution(project))
+      .max(sdkType.versionComparator())
+      .orElse(null);
+  }
+
+  @NotNull
+  public static Set<MavenRemoteRepository> getRemoteResolvedRepositories(@NotNull Project project) {
+    MavenProjectsManager projectsManager = MavenProjectsManager.getInstance(project);
+    Set<MavenRemoteRepository> repositories = projectsManager.getRemoteRepositories();
+    try {
+      MavenEmbedderWrapper mavenEmbedderWrapper = projectsManager.getEmbeddersManager()
+        .getEmbedder(MavenEmbeddersManager.FOR_POST_PROCESSING, EMPTY, EMPTY);
+      Set<MavenRemoteRepository> resolvedRepositories = mavenEmbedderWrapper.resolveRepositories(repositories);
+      return resolvedRepositories.isEmpty() ? repositories : resolvedRepositories;
+    } catch (Exception e) {
+      MavenLog.LOG.warn("resolve remote repo error", e);
+    }
+    return repositories;
   }
 }

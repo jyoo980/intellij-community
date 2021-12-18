@@ -13,6 +13,9 @@ import com.intellij.openapi.util.NlsActions
 import com.intellij.ui.dsl.builder.SpacingConfiguration
 import org.jetbrains.annotations.ApiStatus
 import java.awt.Dimension
+import javax.accessibility.AccessibleContext
+import javax.accessibility.AccessibleState
+import javax.accessibility.AccessibleStateSet
 
 /**
  * todo
@@ -41,7 +44,7 @@ class SegmentedButtonToolbar(actionGroup: ActionGroup, horizontal: Boolean, priv
     place: String,
     presentation: Presentation,
     minimumSize: Dimension): ActionButton {
-    return SegmentedButton(action as SegmentedButtonAction<*>, presentation, place, minimumSize, spacingConfiguration)
+    return SegmentedButton(action, presentation, place, minimumSize, spacingConfiguration)
   }
 
   override fun addNotify() {
@@ -72,7 +75,7 @@ internal class SegmentedButtonAction<T>(private val option: T,
 }
 
 private class SegmentedButton(
-  action: SegmentedButtonAction<*>,
+  action: AnAction,
   presentation: Presentation,
   place: String?,
   minimumSize: Dimension,
@@ -86,5 +89,21 @@ private class SegmentedButton(
     val preferredSize = super.getPreferredSize()
     return Dimension(preferredSize.width + spacingConfiguration.segmentedButtonHorizontalGap * 2,
       preferredSize.height + spacingConfiguration.segmentedButtonVerticalGap * 2)
+  }
+
+  override fun getAccessibleContext(): AccessibleContext {
+    if (accessibleContext == null) {
+      accessibleContext = AccessibleSegmentedButton()
+    }
+    return accessibleContext
+  }
+
+  private inner class AccessibleSegmentedButton: ActionButton.AccessibleActionButton() {
+
+    override fun setCustomAccessibleStateSet(accessibleStateSet: AccessibleStateSet) {
+      if (isSelected) {
+        accessibleStateSet.add(AccessibleState.CHECKED)
+      }
+    }
   }
 }

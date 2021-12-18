@@ -45,6 +45,7 @@ public class Splitter extends JPanel implements Splittable {
   private boolean myVerticalSplit;
   private boolean myHonorMinimumSize;
   private boolean myHonorPreferredSize;
+  private boolean myUseViewportViewSizes;
   private final float myMinProp;
   private final float myMaxProp;
 
@@ -158,6 +159,14 @@ public class Splitter extends JPanel implements Splittable {
 
   public boolean isHonorPreferredSize() {
     return myHonorPreferredSize;
+  }
+
+  public boolean isUseViewportViewSizes() {
+    return myUseViewportViewSizes;
+  }
+
+  public void setUseViewportViewSizes(boolean useViewportViewSizes) {
+    myUseViewportViewSizes = useViewportViewSizes;
   }
 
   public void setHonorComponentsPreferredSize(boolean honorPreferredSize) {
@@ -480,11 +489,9 @@ public class Splitter extends JPanel implements Splittable {
     }
     double mSize1 = getDimension(myFirstComponent.getMinimumSize());
     double mSize2 = getDimension(mySecondComponent.getMinimumSize());
-    double pSize1 = getDimension(myFirstComponent.getPreferredSize());
-    double pSize2 = getDimension(mySecondComponent.getPreferredSize());
     if (myHonorPreferredSize && size1 > mSize1 && size2 > mSize2) {
-      mSize1 = pSize1;
-      mSize2 = pSize2;
+      mSize1 = getDimension(myFirstComponent.getPreferredSize());
+      mSize2 = getDimension(mySecondComponent.getPreferredSize());
     }
 
     if (total < mSize1 + mSize2) {
@@ -686,7 +693,8 @@ public class Splitter extends JPanel implements Splittable {
     return 0.0f;
   }
 
-  private static Component unwrap(Component c) {
+  private Component unwrap(Component c) {
+    if (!myUseViewportViewSizes) return c;
     JScrollPane scrollPane = ObjectUtils.tryCast(c, JScrollPane.class);
     JViewport viewport = scrollPane == null ? null : scrollPane.getViewport();
     Component view = viewport == null ? null : viewport.getView();

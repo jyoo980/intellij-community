@@ -15,11 +15,11 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.IdeRootPaneNorthExtension;
 import com.intellij.openapi.wm.StatusBar;
 import com.intellij.openapi.wm.StatusBarCentralWidget;
+import com.intellij.openapi.wm.impl.status.IdeStatusBarImpl;
 import com.intellij.ui.ExperimentalUI;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.util.ui.JBSwingUtilities;
 import com.intellij.util.ui.JBUI;
-import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.concurrency.AsyncPromise;
@@ -31,7 +31,6 @@ import java.awt.*;
  * @author Konstantin Bulenkov
  */
 public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension implements StatusBarCentralWidget {
-  @NonNls public static final String NAV_BAR = "NavBar";
   private static final Logger LOG = Logger.getInstance(NavBarRootPaneExtension.class);
   private final Project myProject;
   private JComponent myWrapperPanel;
@@ -96,6 +95,10 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension imp
         myWrapperPanel.add(buildNavBarPanel(), BorderLayout.CENTER);
       }
 
+      if (!ExperimentalUI.isNewToolbar()) {
+        myWrapperPanel.putClientProperty("NavBarPanel", myNavigationBar);
+      }
+
       revalidate();
     }
     return myWrapperPanel;
@@ -124,6 +127,9 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension imp
             myRunPanel.add(actionToolbar.getComponent(), BorderLayout.CENTER);
             final boolean needGap = isNeedGap(action);
             myRunPanel.setBorder(JBUI.Borders.emptyLeft(needGap ? 5 : 1));
+            NavBarLeftSideExtension.EP_NAME.forEachExtensionSafe(extension -> {
+              extension.process(myWrapperPanel);
+            });
             myWrapperPanel.add(myRunPanel, BorderLayout.EAST);
           }
         }
@@ -141,7 +147,6 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension imp
 
   private JComponent buildNavBarPanel() {
     myNavigationBar = new NavBarPanel(myProject, true);
-    myWrapperPanel.putClientProperty("NavBarPanel", myNavigationBar);
     myNavigationBar.getModel().setFixedComponent(true);
     myScrollPane = ScrollPaneFactory.createScrollPane(myNavigationBar);
 
@@ -176,7 +181,6 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension imp
       @Override
       public void updateUI() {
         super.updateUI();
-        setOpaque(true);
         if (myScrollPane == null || myNavigationBar == null) return;
 
         myScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
@@ -196,6 +200,7 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension imp
     };
 
     panel.add(myScrollPane, BorderLayout.CENTER);
+    panel.setOpaque(!ExperimentalUI.isNewUI());
     panel.updateUI();
     return panel;
   }
@@ -212,23 +217,25 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension imp
       myScrollPane.setVisible(visible);
     }
 
-    myWrapperPanel.setVisible(visible);
-
-    myWrapperPanel.revalidate();
     myNavigationBar.revalidate();
-    myWrapperPanel.repaint();
+    if (myWrapperPanel != null) {
+      myWrapperPanel.setVisible(visible);
 
-    if (myWrapperPanel.getComponentCount() > 0) {
-      Component c = myWrapperPanel.getComponent(0);
-      if (c instanceof JComponent) {
-        ((JComponent)c).setOpaque(false);
+      myWrapperPanel.revalidate();
+      myWrapperPanel.repaint();
+
+      if (myWrapperPanel.getComponentCount() > 0) {
+        Component c = myWrapperPanel.getComponent(0);
+        if (c instanceof JComponent) {
+          ((JComponent)c).setOpaque(false);
+        }
       }
     }
   }
 
   @Override
   public @NotNull String getKey() {
-    return NAV_BAR;
+    return IdeStatusBarImpl.NAVBAR_WIDGET_KEY;
   }
 
   @Override
