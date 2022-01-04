@@ -418,6 +418,7 @@ public class IdeDocumentHistoryImpl extends IdeDocumentHistory implements Dispos
 
   @Override
   public final void back() {
+    // This is invoked when using cmd + [
     removeInvalidFilesFromStacks();
     if (myBackPlaces.isEmpty()) return;
     final PlaceInfo info = myBackPlaces.removeLast();
@@ -437,6 +438,7 @@ public class IdeDocumentHistoryImpl extends IdeDocumentHistory implements Dispos
 
   @Override
   public final void forward() {
+    // This is invoked when using cmd + ]
     removeInvalidFilesFromStacks();
 
     final PlaceInfo target = getTargetForwardInfo();

@@ -10,6 +10,7 @@ import com.intellij.codeInsight.navigation.impl.NavigationActionResult.SingleTar
 import com.intellij.featureStatistics.FeatureUsageTracker
 import com.intellij.internal.statistic.eventLog.events.EventPair
 import com.intellij.openapi.actionSystem.ex.ActionUtil.underModalProgress
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ex.util.EditorUtil
 import com.intellij.openapi.project.DumbService
@@ -19,6 +20,8 @@ import com.intellij.psi.PsiFile
 import com.intellij.ui.list.createTargetPopup
 
 internal object GotoDeclarationOnlyHandler2 : CodeInsightActionHandler {
+
+  private val logger: Logger = Logger.getInstance(GotoDeclarationOrUsageHandler2::class.java)
 
   override fun startInWriteAction(): Boolean = false
 
@@ -64,6 +67,7 @@ internal object GotoDeclarationOnlyHandler2 : CodeInsightActionHandler {
     // obtain event data before showing the popup,
     // because showing the popup will finish the GotoDeclarationAction#actionPerformed and clear the data
     val eventData: List<EventPair<*>> = GotoDeclarationAction.getCurrentEventData()
+    logger.info("GO TO DECLARATION INVOKED WITH EVENT DATA: ${eventData}")
     when (actionResult) {
       is SingleTarget -> {
         actionResult.navigationProvider?.let {
