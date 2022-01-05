@@ -4,22 +4,16 @@ package com.intellij.codeInsight.navigation.actions
 import com.intellij.codeInsight.CodeInsightActionHandler
 import com.intellij.codeInsight.CodeInsightBundle
 import com.intellij.codeInsight.navigation.CtrlMouseInfo
-import com.intellij.codeInsight.navigation.NavigationUtil
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationOnlyHandler2.gotoDeclaration
 import com.intellij.codeInsight.navigation.impl.*
 import com.intellij.featureStatistics.FeatureUsageTracker
 import com.intellij.find.actions.ShowUsagesAction.showUsages
 import com.intellij.find.actions.TargetVariant
-import com.intellij.navigation.impl.RawNavigationRequest
-import com.intellij.navigation.impl.SourceNavigationRequest
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.PlatformCoreDataKeys
 import com.intellij.openapi.actionSystem.ex.ActionUtil.underModalProgress
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.event.EditorMouseEvent
-import com.intellij.openapi.editor.event.EditorMouseListener
 import com.intellij.openapi.editor.ex.util.EditorUtil
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.IndexNotReadyException
@@ -30,8 +24,6 @@ import com.intellij.refactoring.actions.BaseRefactoringAction
 import org.jetbrains.annotations.TestOnly
 
 object GotoDeclarationOrUsageHandler2 : CodeInsightActionHandler {
-
-  private val logger: Logger = Logger.getInstance(GotoDeclarationOrUsageHandler2::class.java)
 
   override fun startInWriteAction(): Boolean = false
 
@@ -79,9 +71,7 @@ object GotoDeclarationOrUsageHandler2 : CodeInsightActionHandler {
         showUsages(project, editor, file, actionResult.targetVariants)
       }
     }
-    // FIXME: 2022-01-04 locationAfterJump doesn't work. It still uses the editor from before the jump.
-    val locationAfterJump: PsiElement = BaseRefactoringAction.getElementAtCaret(editor, file)
-    logger.info("Jump recorded: ${locationBeforeJump.containingFile.name}::${locationBeforeJump.text} -> ${locationAfterJump.containingFile}::${locationAfterJump.text}")
+    GotoJumpMemory.recordJump(actionResult, locationBeforeJump, project, editor)
   }
 
   private fun showUsages(project: Project, editor: Editor, file: PsiFile, searchTargets: List<TargetVariant>) {
