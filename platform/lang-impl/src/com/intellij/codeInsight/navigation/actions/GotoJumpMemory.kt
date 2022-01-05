@@ -6,18 +6,17 @@ import com.intellij.codeInsight.navigation.impl.NavigationActionResult
 import com.intellij.navigation.impl.RawNavigationRequest
 import com.intellij.navigation.impl.SourceNavigationRequest
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.impl.PsiManagerImpl
-import com.intellij.refactoring.actions.BaseRefactoringAction
 
 object GotoJumpMemory {
 
   private val logger: Logger = Logger.getInstance(GotoJumpMemory::class.java)
 
-  internal fun recordJump(GTDUActionResult: GTDUActionResult?, elementBeforeJump: PsiElement, project: Project, editor: Editor) {
+  internal fun recordJump(GTDUActionResult: GTDUActionResult?, elementBeforeJump: PsiElement, project: Project) {
     GTDUActionResult?.let { it ->
       if (it is GTDUActionResult.GTD) {
         val actionResult = it.navigationActionResult
@@ -25,10 +24,9 @@ object GotoJumpMemory {
           when (val req = actionResult.request) {
             is RawNavigationRequest -> {
               if (req.navigatable is OpenFileDescriptor) {
-                val elementAfterJump = extractElement(req.navigatable, project, editor)
-                logger.info(
-                  "Jump recorded: ${elementBeforeJump.containingFile.name}::${elementBeforeJump} -> ${elementAfterJump.containingFile.name}::${elementAfterJump}"
-                )
+                getElementAtOffset(req.navigatable, project)?.let { it ->
+                  logger.info("Jump recorded: ${elementBeforeJump.containingFile.name}::${elementBeforeJump} -> ${it.containingFile.name}::${it}")
+                }
               }
             }
             is SourceNavigationRequest ->
@@ -39,11 +37,18 @@ object GotoJumpMemory {
     }
   }
 
-  // FIXME: 2022-01-04 I have a suspicion that the offset isn't correct here... need to find a way to see where the cursor ends up.
-  private fun extractElement(openFileDescriptor: OpenFileDescriptor, project: Project, editor: Editor): PsiElement {
-    val virtualFile = openFileDescriptor.file
-    val fileAfterJump = PsiManagerImpl.getInstance(project).findFile(virtualFile)
-    // FIXME: 2022-01-04 The editor cursor is likely stale (offset stored from the old file). 
-    return BaseRefactoringAction.getElementAtCaret(editor, fileAfterJump)
+  private fun getElementAtOffset(fileDescriptor: OpenFileDescriptor, project: Project): PsiElement? {
+    val offset = fileDescriptor.offset
+    val fileAfterJump = PsiManagerImpl.getInstance(project).findFile(fileDescriptor.file)
+    return fileAfterJump?.let { it ->
+      var element = it.findElementAt(offset)
+      if (element == null && offset == it.textLength) {
+        element = it.findElementAt(offset - 1)
+      }
+      if (element is PsiWhiteSpace) {
+        element = it.findElementAt(element.textRange.startOffset -1)
+      }
+      return element
+    }
   }
 }

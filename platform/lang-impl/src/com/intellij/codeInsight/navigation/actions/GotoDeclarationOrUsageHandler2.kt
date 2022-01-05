@@ -71,7 +71,7 @@ object GotoDeclarationOrUsageHandler2 : CodeInsightActionHandler {
         showUsages(project, editor, file, actionResult.targetVariants)
       }
     }
-    GotoJumpMemory.recordJump(actionResult, locationBeforeJump, project, editor)
+    GotoJumpMemory.recordJump(actionResult, locationBeforeJump, project)
   }
 
   private fun showUsages(project: Project, editor: Editor, file: PsiFile, searchTargets: List<TargetVariant>) {
