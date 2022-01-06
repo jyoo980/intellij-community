@@ -8,6 +8,7 @@ import com.intellij.navigation.impl.SourceNavigationRequest
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.impl.PsiManagerImpl
@@ -24,22 +25,25 @@ object GotoJumpMemory {
           when (val req = actionResult.request) {
             is RawNavigationRequest -> {
               if (req.navigatable is OpenFileDescriptor) {
-                getElementAtOffset(req.navigatable, project)?.let { it ->
-                  logger.info("Jump recorded: ${elementBeforeJump.containingFile.name}::${elementBeforeJump} -> ${it.containingFile.name}::${it}")
+                val virtualFile = req.navigatable.file
+                val offset = req.navigatable.offset
+                getElementAtOffset(virtualFile, offset, project)?.let { afterJump ->
+                  logger.info(jumpRecord(elementBeforeJump, afterJump))
                 }
               }
             }
             is SourceNavigationRequest ->
-              error("Not yet implemented")
+              getElementAtOffset(req.file, req.offset, project)?.let { afterJump ->
+                logger.info(jumpRecord(elementBeforeJump, afterJump))
+              }
           }
         }
       }
     }
   }
 
-  private fun getElementAtOffset(fileDescriptor: OpenFileDescriptor, project: Project): PsiElement? {
-    val offset = fileDescriptor.offset
-    val fileAfterJump = PsiManagerImpl.getInstance(project).findFile(fileDescriptor.file)
+  private fun getElementAtOffset(virtualFile: VirtualFile, offset: Int, project: Project): PsiElement? {
+    val fileAfterJump = PsiManagerImpl.getInstance(project).findFile(virtualFile)
     return fileAfterJump?.let { it ->
       var element = it.findElementAt(offset)
       if (element == null && offset == it.textLength) {
@@ -50,5 +54,13 @@ object GotoJumpMemory {
       }
       return element
     }
+  }
+
+  private fun jumpRecord(prev: PsiElement, curr: PsiElement): String {
+    val prevFileName = prev.containingFile.name
+    val currFileName = curr.containingFile.name
+    val lhs = "Jump recorded: $prevFileName::$prev"
+    val rhs = "$currFileName::$curr"
+    return "$lhs -> $rhs"
   }
 }
