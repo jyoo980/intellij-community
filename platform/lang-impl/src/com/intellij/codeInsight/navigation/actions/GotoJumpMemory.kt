@@ -19,24 +19,29 @@ object GotoJumpMemory {
 
   internal fun recordJump(GTDUActionResult: GTDUActionResult?, elementBeforeJump: PsiElement, project: Project) {
     GTDUActionResult?.let { it ->
-      if (it is GTDUActionResult.GTD) {
-        val actionResult = it.navigationActionResult
-        if (actionResult is NavigationActionResult.SingleTarget) {
-          when (val req = actionResult.request) {
-            is RawNavigationRequest -> {
-              if (req.navigatable is OpenFileDescriptor) {
-                val virtualFile = req.navigatable.file
-                val offset = req.navigatable.offset
-                getElementAtOffset(virtualFile, offset, project)?.let { afterJump ->
-                  logger.info(jumpRecord(elementBeforeJump, afterJump))
+      when (it) {
+        is GTDUActionResult.GTD -> {
+          val actionResult = it.navigationActionResult
+          if (actionResult is NavigationActionResult.SingleTarget) {
+            when (val req = actionResult.request) {
+              is RawNavigationRequest -> {
+                if (req.navigatable is OpenFileDescriptor) {
+                  val virtualFile = req.navigatable.file
+                  val offset = req.navigatable.offset
+                  getElementAtOffset(virtualFile, offset, project)?.let { afterJump ->
+                    logger.info(jumpRecord(elementBeforeJump, afterJump))
+                  }
                 }
               }
-            }
-            is SourceNavigationRequest ->
-              getElementAtOffset(req.file, req.offset, project)?.let { afterJump ->
+              is SourceNavigationRequest -> getElementAtOffset(req.file, req.offset, project)?.let { afterJump ->
                 logger.info(jumpRecord(elementBeforeJump, afterJump))
               }
+            }
           }
+        }
+        is GTDUActionResult.SU -> {
+          val searchTarget = it.targetVariants
+          logger.info("Show Usages triggered on: ${searchTarget[0]}")
         }
       }
     }
