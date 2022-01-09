@@ -48,7 +48,7 @@ public final class DocumentationPsiHoverInfo implements DocumentationHoverInfo {
   }
 
   @Override
-  public @Nullable JComponent createQuickDocComponent(@NotNull Editor editor, boolean deEmphasize, @NotNull PopupBridge popupBridge) {
+  public @Nullable JComponent createQuickDocComponent(@NotNull Editor editor, boolean deEmphasize, @NotNull PopupBridge popupBridge, int offset) {
     PsiElement element = quickDocElement.get();
     Project project = Objects.requireNonNull(editor.getProject());
     DocumentationManager documentationManager = DocumentationManager.getInstance(project);

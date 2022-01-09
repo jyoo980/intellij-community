@@ -162,7 +162,7 @@ public class EditorMouseHoverPopupManager implements Disposable {
         else if (relation == Context.Relation.DIFFERENT) {
           closeHint();
         }
-        scheduleProcessing(editor, context, relation == Context.Relation.SIMILAR, false, false);
+        scheduleProcessing(editor, context, relation == Context.Relation.SIMILAR, false, false, targetOffset);
       })
       .submit(AppExecutorUtil.getAppExecutorService());
   }
@@ -187,7 +187,8 @@ public class EditorMouseHoverPopupManager implements Disposable {
                                     @NotNull Context context,
                                     boolean updateExistingPopup,
                                     boolean forceShowing,
-                                    boolean requestFocus) {
+                                    boolean requestFocus,
+                                    int offset) {
     ProgressIndicatorBase progress = new ProgressIndicatorBase();
     myCurrentProgress = progress;
     myAlarm.addRequest(() -> {
@@ -209,7 +210,7 @@ public class EditorMouseHoverPopupManager implements Disposable {
           }
 
           PopupBridge popupBridge = new PopupBridge();
-          JComponent component = info.createComponent(topLevelEditor, popupBridge, requestFocus);
+          JComponent component = info.createComponent(topLevelEditor, popupBridge, requestFocus, offset);
           if (component == null) {
             closeHint();
           }
@@ -433,7 +434,7 @@ public class EditorMouseHoverPopupManager implements Disposable {
         return showImmediately ? 0 : super.getShowingDelay();
       }
     };
-    scheduleProcessing(editor, context, false, true, requestFocus);
+    scheduleProcessing(editor, context, false, true, requestFocus, offset);
   }
 
   protected static class Context {

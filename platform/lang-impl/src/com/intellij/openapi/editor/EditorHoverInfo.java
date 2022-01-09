@@ -25,7 +25,7 @@ public final class EditorHoverInfo {
     this.documentationHoverInfo = documentationHoverInfo;
   }
 
-  public @Nullable JComponent createComponent(@NotNull Editor editor, @NotNull PopupBridge popupBridge, boolean requestFocus) {
+  public @Nullable JComponent createComponent(@NotNull Editor editor, @NotNull PopupBridge popupBridge, boolean requestFocus, int offset) {
     Project project = Objects.requireNonNull(editor.getProject());
     boolean quickDocShownInPopup = documentationHoverInfo != null && documentationHoverInfo.showInPopup(project);
     JComponent c1 = highlightHoverInfo == null

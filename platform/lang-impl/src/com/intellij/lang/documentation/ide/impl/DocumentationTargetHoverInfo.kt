@@ -14,13 +14,15 @@ import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.DocumentationHoverInfo
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.PopupBridge
 import com.intellij.openapi.editor.ex.util.EditorUtil
 import com.intellij.openapi.progress.runBlockingCancellable
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiFile
+import com.intellij.psi.*
+import com.intellij.psi.impl.PsiDocumentManagerImpl
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil
 import com.intellij.psi.util.PsiUtilBase
 import com.intellij.ui.popup.AbstractPopup
@@ -28,6 +30,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.swing.JComponent
+
+private val logger = Logger.getInstance("DocumentationTargetHoverInfo")
 
 internal fun calcTargetDocumentationInfo(project: Project, hostEditor: Editor, hostOffset: Int): DocumentationHoverInfo? {
   ApplicationManager.getApplication().assertIsNonDispatchThread()
@@ -90,14 +94,19 @@ private class DocumentationTargetHoverInfo(
 
   override fun showInPopup(project: Project): Boolean = true
 
-  override fun createQuickDocComponent(editor: Editor, jointPopup: Boolean, bridge: PopupBridge): JComponent {
+  override fun createQuickDocComponent(editor: Editor, jointPopup: Boolean, bridge: PopupBridge, offset: Int): JComponent {
     val project = editor.project!!
     val documentationUI = DocumentationUI(project, browser)
+    extractElementUnderHover(project, editor, offset)?.let {
+      logger.info("HOVERING OVER: ${it}")
+      logger.info("IS THIS A METHOD ARG: ${it.isMethodArg()}")
+    }
     val popupUI = DocumentationPopupUI(project, documentationUI)
     if (jointPopup) {
       popupUI.jointHover()
     }
     bridge.performWhenAvailable { popup: AbstractPopup ->
+      logger.info("AbstractPopup#toString: $popup")
       popupUI.setPopup(popup)
       popupUI.updatePopup {
         resizePopup(popup)
@@ -105,5 +114,22 @@ private class DocumentationTargetHoverInfo(
     }
     EditorUtil.disposeWithEditor(editor, popupUI)
     return popupUI.component
+  }
+
+  private fun extractElementUnderHover(project: Project, editor: Editor, offset: Int): PsiElement? {
+    return PsiDocumentManagerImpl.getInstance(project).getPsiFile(editor.document)?.let { it ->
+      var element = it.findElementAt(offset)
+      if (element == null && offset == it.textLength) {
+        element = it.findElementAt(offset - 1)
+      }
+      if (element is PsiWhiteSpace) {
+        element = it.findElementAt(element.textRange.startOffset - 1)
+      }
+      return element
+    }
+  }
+
+  private fun PsiElement.isMethodArg(): Boolean {
+    return (((this as? PsiIdentifier)?.parent as? PsiReferenceExpression)?.parent)?.parent is PsiMethodCallExpression
   }
 }

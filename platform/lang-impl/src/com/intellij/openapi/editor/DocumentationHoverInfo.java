@@ -13,5 +13,5 @@ public interface DocumentationHoverInfo {
 
   boolean showInPopup(@NotNull Project project);
 
-  @Nullable JComponent createQuickDocComponent(@NotNull Editor editor, boolean jointPopup, @NotNull PopupBridge bridge);
+  @Nullable JComponent createQuickDocComponent(@NotNull Editor editor, boolean jointPopup, @NotNull PopupBridge bridge, int offset);
 }

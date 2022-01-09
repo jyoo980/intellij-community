@@ -17,10 +17,12 @@ import com.intellij.navigation.TargetPresentation
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.DataProvider
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.HtmlChunk
+import com.intellij.psi.PsiElement
 import com.intellij.ui.PopupHandler
 import com.intellij.util.SmartList
 import com.intellij.util.ui.EDT
@@ -39,6 +41,8 @@ internal class DocumentationUI(
   val browser: DocumentationBrowser,
 ) : DataProvider, Disposable {
 
+  private val logger = Logger.getInstance(DocumentationUI::class.java)
+
   val scrollPane: JScrollPane
   val editorPane: DocumentationHintEditorPane
 
@@ -55,6 +59,7 @@ internal class DocumentationUI(
   }
 
   init {
+    logger.info("INIT POPUP START")
     scrollPane = DocumentationScrollPane()
     editorPane = DocumentationHintEditorPane(project, DocumentationScrollPane.keyboardActions(scrollPane), {
       imageResolver?.resolveImage(it)
