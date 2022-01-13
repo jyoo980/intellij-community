@@ -33,7 +33,7 @@ public final class EditorHoverInfo {
                     : highlightHoverInfo.createHighlightInfoComponent(editor, !quickDocShownInPopup, popupBridge, requestFocus);
     JComponent c2 = documentationHoverInfo == null
                     ? null
-                    : documentationHoverInfo.createQuickDocComponent(editor, c1 != null, popupBridge);
+                    : documentationHoverInfo.createQuickDocComponent(editor, c1 != null, popupBridge, offset);
     assert quickDocShownInPopup == (c2 != null);
     if (c1 == null && c2 == null) return null;
     JPanel p = new JPanel(new CombinedPopupLayout(c1, c2));

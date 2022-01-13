@@ -88,6 +88,7 @@ internal class DocumentationPopupUI(
 
     toolbarComponent = toolbarComponent(toolbarActionGroup, editorPane)
     corner = actionButton(gearActions, editorPane)
+    // TODO: 2022-01-10 Maybe we need something here (Instantiate the button for reachability) 
     component = DocumentationPopupPane(ui.scrollPane).also {
       it.add(toolbarComponent, BorderLayout.NORTH)
       it.add(scrollPaneWithCorner(this, ui.scrollPane, corner), BorderLayout.CENTER)

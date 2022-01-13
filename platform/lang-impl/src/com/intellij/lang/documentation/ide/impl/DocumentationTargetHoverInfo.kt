@@ -25,11 +25,13 @@ import com.intellij.psi.*
 import com.intellij.psi.impl.PsiDocumentManagerImpl
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil
 import com.intellij.psi.util.PsiUtilBase
+import com.intellij.psi.util.parentsOfType
 import com.intellij.ui.popup.AbstractPopup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.swing.JComponent
+import javax.swing.JLabel
 
 private val logger = Logger.getInstance("DocumentationTargetHoverInfo")
 
@@ -97,22 +99,30 @@ private class DocumentationTargetHoverInfo(
   override fun createQuickDocComponent(editor: Editor, jointPopup: Boolean, bridge: PopupBridge, offset: Int): JComponent {
     val project = editor.project!!
     val documentationUI = DocumentationUI(project, browser)
-    extractElementUnderHover(project, editor, offset)?.let {
-      logger.info("HOVERING OVER: ${it}")
-      logger.info("IS THIS A METHOD ARG: ${it.isMethodArg()}")
+    val elementUnderCaret = extractElementUnderHover(project, editor, offset)
+    elementUnderCaret?.let {
+      logger.info("HOVERING OVER: $it")
+      logger.info("IS THIS A METHOD ARG: ${it.isMethodArgReference()}")
     }
     val popupUI = DocumentationPopupUI(project, documentationUI)
     if (jointPopup) {
       popupUI.jointHover()
     }
     bridge.performWhenAvailable { popup: AbstractPopup ->
-      logger.info("AbstractPopup#toString: $popup")
       popupUI.setPopup(popup)
       popupUI.updatePopup {
         resizePopup(popup)
       }
     }
     EditorUtil.disposeWithEditor(editor, popupUI)
+    // TODO: 2022-01-11 THIS IS FOR THE DEMO
+    elementUnderCaret?.let {
+      return@let if (it.isMethodArgReference()) {
+          "How was this argument created?"
+        } else if (it.isObjectReference()) {
+          "How is this object modified?"
+        } else null
+    }?.let { popupUI.component.add(JLabel(it)) }
     return popupUI.component
   }
 
@@ -129,7 +139,14 @@ private class DocumentationTargetHoverInfo(
     }
   }
 
-  private fun PsiElement.isMethodArg(): Boolean {
+  // TODO: 2022-01-11 Look into how this works/does not work for expressions within method call parens
+  private fun PsiElement.isMethodArgReference(): Boolean {
     return (((this as? PsiIdentifier)?.parent as? PsiReferenceExpression)?.parent)?.parent is PsiMethodCallExpression
+  }
+
+  private fun PsiElement.isObjectReference(): Boolean {
+    val backingElement = this.originalElement
+    val elementParents = backingElement.parentsOfType<PsiLocalVariable>()
+    return elementParents.any()
   }
 }

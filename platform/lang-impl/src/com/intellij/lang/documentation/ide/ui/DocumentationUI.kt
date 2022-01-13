@@ -22,7 +22,6 @@ import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.HtmlChunk
-import com.intellij.psi.PsiElement
 import com.intellij.ui.PopupHandler
 import com.intellij.util.SmartList
 import com.intellij.util.ui.EDT
@@ -182,7 +181,7 @@ internal class DocumentationUI(
     showMessage(CodeInsightBundle.message("javadoc.fetching.progress"))
   }
 
-  private fun showMessage(message: @Nls String) {
+  fun showMessage(message: @Nls String) {
     val element = HtmlChunk.div()
       .setClass("content-only")
       .addText(message)
