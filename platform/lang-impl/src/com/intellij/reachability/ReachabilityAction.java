@@ -17,8 +17,8 @@ public class ReachabilityAction extends CodeInsightAction {
     // (at the moment) with forward reachability questions, we pass in `false`.
     SliceHandler forwardSliceHandler = SliceHandler.create(false);
     SliceCollector collector = new SliceCollector();
-    SliceHydrationService javaSliceHydrationService = new JavaSliceHydrationService();
-    return new ReachabilityHandler(forwardSliceHandler, collector, javaSliceHydrationService);
+    SliceHydrationService sliceHydrationService = new JavaSliceHydrationService();
+    return new ReachabilityHandler(forwardSliceHandler, collector, sliceHydrationService);
   }
 
   @Override
