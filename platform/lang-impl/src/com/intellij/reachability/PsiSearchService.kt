@@ -18,6 +18,12 @@ object PsiSearchService {
     return nodes.associateBy({ it }, { funs.map { f -> f(it) }})
   }
 
+  fun prettyPrint(optMethod: PsiElement?, optClazz: PsiElement?): String {
+    val methodName = optMethod?.let { (it as PsiMethod).name } ?: "prettyPrint unsupported"
+    val clazzName = optClazz?.let { (it as PsiClass).name } ?: "prettyPrint unsupported"
+    return "$clazzName#$methodName"
+  }
+
   private fun <T: PsiElement> findNearestStructWithType(node: SliceNode, targetType: Class<T>): PsiElement? {
     return node.value?.let {
       PsiTreeUtil.getParentOfType(
