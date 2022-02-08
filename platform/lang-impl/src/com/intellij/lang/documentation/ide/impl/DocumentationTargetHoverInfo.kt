@@ -133,14 +133,15 @@ private class DocumentationTargetHoverInfo(
     }
   }
 
-  // Edge case: a.foo() -> a is technically a method argument
   private fun isNonLiteralMethodArgReference(element: PsiElement): Boolean {
     val optParentMethodCallExpr = PsiTreeUtil.getParentOfType(element, PsiMethodCallExpression::class.java)
-    return PsiTreeUtil.instanceOf(element, PsiIdentifier::class.java) && optParentMethodCallExpr != null
+    // Need to check if one of the element's parents is a method list, otherwise we also get items like a.foo() being reported as args.
+    val optParentExprList = PsiTreeUtil.getParentOfType(element, PsiExpressionList::class.java)
+    return PsiTreeUtil.instanceOf(element, PsiIdentifier::class.java) && optParentMethodCallExpr != null && optParentExprList != null
   }
 
   private fun isObjectReference(element: PsiElement): Boolean {
-    val optParentLocalVariable = PsiTreeUtil.getParentOfType(element, PsiLocalVariable::class.java)
-    return PsiTreeUtil.instanceOf(element, PsiLocalVariable::class.java) || optParentLocalVariable != null
+    val isParentLocalVar = element.parent?.let { PsiTreeUtil.instanceOf(it, PsiLocalVariable::class.java) } ?: false
+    return isParentLocalVar && PsiTreeUtil.instanceOf(element, PsiIdentifier::class.java)
   }
 }
