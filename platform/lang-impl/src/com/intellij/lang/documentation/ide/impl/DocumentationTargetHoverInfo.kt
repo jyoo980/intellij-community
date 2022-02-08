@@ -24,16 +24,14 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.impl.PsiDocumentManagerImpl
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.PsiUtilBase
-import com.intellij.psi.util.parentsOfType
 import com.intellij.ui.popup.AbstractPopup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.swing.JComponent
 import javax.swing.JLabel
-
-private val logger = Logger.getInstance("DocumentationTargetHoverInfo")
 
 internal fun calcTargetDocumentationInfo(project: Project, hostEditor: Editor, hostOffset: Int): DocumentationHoverInfo? {
   ApplicationManager.getApplication().assertIsNonDispatchThread()
@@ -100,10 +98,6 @@ private class DocumentationTargetHoverInfo(
     val project = editor.project!!
     val documentationUI = DocumentationUI(project, browser)
     val elementUnderCaret = extractElementUnderHover(project, editor, offset)
-    elementUnderCaret?.let {
-      logger.info("HOVERING OVER: $it")
-      logger.info("IS THIS A METHOD ARG: ${it.isMethodArgReference()}")
-    }
     val popupUI = DocumentationPopupUI(project, documentationUI)
     if (jointPopup) {
       popupUI.jointHover()
@@ -115,14 +109,14 @@ private class DocumentationTargetHoverInfo(
       }
     }
     EditorUtil.disposeWithEditor(editor, popupUI)
-    // TODO: 2022-01-11 THIS IS FOR THE DEMO
-    elementUnderCaret?.let {
-      return@let if (it.isMethodArgReference()) {
-          "How was this argument created?"
-        } else if (it.isObjectReference()) {
-          "How is this object modified?"
-        } else null
-    }?.let { popupUI.component.add(JLabel(it)) }
+    val reachabilityLabel = elementUnderCaret?.let {
+      if (isNonLiteralMethodArgReference(it)) {
+        "How was this argument created?"
+      } else if (isObjectReference(it)) {
+        "How is this object modified?"
+      } else null
+    }
+    reachabilityLabel?.let { popupUI.component.add(JLabel(it)) }
     return popupUI.component
   }
 
@@ -139,14 +133,14 @@ private class DocumentationTargetHoverInfo(
     }
   }
 
-  // TODO: 2022-01-11 Look into how this works/does not work for expressions within method call parens
-  private fun PsiElement.isMethodArgReference(): Boolean {
-    return (((this as? PsiIdentifier)?.parent as? PsiReferenceExpression)?.parent)?.parent is PsiMethodCallExpression
+  // Edge case: a.foo() -> a is technically a method argument
+  private fun isNonLiteralMethodArgReference(element: PsiElement): Boolean {
+    val optParentMethodCallExpr = PsiTreeUtil.getParentOfType(element, PsiMethodCallExpression::class.java)
+    return PsiTreeUtil.instanceOf(element, PsiIdentifier::class.java) && optParentMethodCallExpr != null
   }
 
-  private fun PsiElement.isObjectReference(): Boolean {
-    val backingElement = this.originalElement
-    val elementParents = backingElement.parentsOfType<PsiLocalVariable>()
-    return elementParents.any()
+  private fun isObjectReference(element: PsiElement): Boolean {
+    val optParentLocalVariable = PsiTreeUtil.getParentOfType(element, PsiLocalVariable::class.java)
+    return PsiTreeUtil.instanceOf(element, PsiLocalVariable::class.java) || optParentLocalVariable != null
   }
 }
