@@ -14,24 +14,25 @@ import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.DocumentationHoverInfo
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.PopupBridge
 import com.intellij.openapi.editor.ex.util.EditorUtil
 import com.intellij.openapi.progress.runBlockingCancellable
 import com.intellij.openapi.project.Project
-import com.intellij.psi.*
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.impl.PsiDocumentManagerImpl
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil
-import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.PsiUtilBase
+import com.intellij.reachability.ActualReachabilityHandler
 import com.intellij.ui.popup.AbstractPopup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.awt.BorderLayout
 import javax.swing.JComponent
-import javax.swing.JLabel
 
 internal fun calcTargetDocumentationInfo(project: Project, hostEditor: Editor, hostOffset: Int): DocumentationHoverInfo? {
   ApplicationManager.getApplication().assertIsNonDispatchThread()
@@ -109,14 +110,10 @@ private class DocumentationTargetHoverInfo(
       }
     }
     EditorUtil.disposeWithEditor(editor, popupUI)
-    val reachabilityLabel = elementUnderCaret?.let {
-      if (isNonLiteralMethodArgReference(it)) {
-        "How was this argument created?"
-      } else if (isObjectReference(it)) {
-        "How is this object modified?"
-      } else null
+    elementUnderCaret?.let {
+      val optReachabilityButton = ActualReachabilityHandler.constructButtonFor(it)
+      optReachabilityButton?.let { reachabilityButton -> popupUI.component.add(reachabilityButton.button, BorderLayout.NORTH) }
     }
-    reachabilityLabel?.let { popupUI.component.add(JLabel(it)) }
     return popupUI.component
   }
 
@@ -131,17 +128,5 @@ private class DocumentationTargetHoverInfo(
       }
       return element
     }
-  }
-
-  private fun isNonLiteralMethodArgReference(element: PsiElement): Boolean {
-    val optParentMethodCallExpr = PsiTreeUtil.getParentOfType(element, PsiMethodCallExpression::class.java)
-    // Need to check if one of the element's parents is a method list, otherwise we also get items like a.foo() being reported as args.
-    val optParentExprList = PsiTreeUtil.getParentOfType(element, PsiExpressionList::class.java)
-    return PsiTreeUtil.instanceOf(element, PsiIdentifier::class.java) && optParentMethodCallExpr != null && optParentExprList != null
-  }
-
-  private fun isObjectReference(element: PsiElement): Boolean {
-    val isParentLocalVar = element.parent?.let { PsiTreeUtil.instanceOf(it, PsiLocalVariable::class.java) } ?: false
-    return isParentLocalVar && PsiTreeUtil.instanceOf(element, PsiIdentifier::class.java)
   }
 }
