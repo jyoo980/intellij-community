@@ -112,7 +112,10 @@ private class DocumentationTargetHoverInfo(
     EditorUtil.disposeWithEditor(editor, popupUI)
     elementUnderCaret?.let {
       val optReachabilityButton = ActualReachabilityHandler.constructButtonFor(it)
-      optReachabilityButton?.let { reachabilityButton -> popupUI.component.add(reachabilityButton.button, BorderLayout.NORTH) }
+      optReachabilityButton?.let { reachabilityButton ->
+        reachabilityButton.activateAction(editor)
+        popupUI.component.add(reachabilityButton.button, BorderLayout.NORTH)
+      }
     }
     return popupUI.component
   }
