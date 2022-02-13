@@ -27,12 +27,15 @@ import com.intellij.psi.impl.PsiDocumentManagerImpl
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil
 import com.intellij.psi.util.PsiUtilBase
 import com.intellij.reachability.ActualReachabilityHandler
-import com.intellij.ui.popup.AbstractPopup
+import com.intellij.reachability.DocumentationPopupButton
+import com.intellij.reachability.util.ReachFeatureToggle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.awt.BorderLayout
+import java.awt.GridLayout
 import javax.swing.JComponent
+import javax.swing.JPanel
 
 internal fun calcTargetDocumentationInfo(project: Project, hostEditor: Editor, hostOffset: Int): DocumentationHoverInfo? {
   ApplicationManager.getApplication().assertIsNonDispatchThread()
@@ -98,23 +101,23 @@ private class DocumentationTargetHoverInfo(
   override fun createQuickDocComponent(editor: Editor, jointPopup: Boolean, bridge: PopupBridge, offset: Int): JComponent {
     val project = editor.project!!
     val documentationUI = DocumentationUI(project, browser)
-    val elementUnderCaret = extractElementUnderHover(project, editor, offset)
     val popupUI = DocumentationPopupUI(project, documentationUI)
     if (jointPopup) {
       popupUI.jointHover()
     }
-    bridge.performWhenAvailable { popup: AbstractPopup ->
-      popupUI.setPopup(popup)
-      popupUI.updatePopup {
-        resizePopup(popup)
-      }
-    }
     EditorUtil.disposeWithEditor(editor, popupUI)
-    elementUnderCaret?.let {
-      val optReachabilityButton = ActualReachabilityHandler.constructButtonFor(it)
-      optReachabilityButton?.let { reachabilityButton ->
-        reachabilityButton.activateAction(editor)
-        popupUI.component.add(reachabilityButton.button, BorderLayout.NORTH)
+    if (ReachFeatureToggle.isEnabled) {
+      extractElementUnderHover(project, editor, offset)?.let {
+        ActualReachabilityHandler.constructButtonFor(it)?.let { reachButton ->
+          val showDocButton = DocumentationPopupButton().also { button -> button.setText("Show types and documentation?") }
+          showDocButton.activateAction(bridge, popupUI)
+          val hoverPanel = JPanel(GridLayout(2, 1))
+          reachButton.activateAction(editor)
+          hoverPanel.add(reachButton.button)
+          hoverPanel.add(showDocButton.button)
+          popupUI.component.add(hoverPanel, BorderLayout.NORTH)
+          popupUI.hideDocumentationPane()
+        }
       }
     }
     return popupUI.component

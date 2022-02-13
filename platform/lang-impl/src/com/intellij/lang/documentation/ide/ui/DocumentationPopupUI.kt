@@ -40,7 +40,7 @@ internal class DocumentationPopupUI(
 ) : Disposable {
 
   private var _ui: DocumentationUI? = ui
-  private val ui: DocumentationUI get() = requireNotNull(_ui) { "already detached" }
+  val ui: DocumentationUI get() = requireNotNull(_ui) { "already detached" }
   val browser: DocumentationBrowser get() = ui.browser
 
   private val toolbarComponent: JComponent
@@ -88,10 +88,10 @@ internal class DocumentationPopupUI(
 
     toolbarComponent = toolbarComponent(toolbarActionGroup, editorPane)
     corner = actionButton(gearActions, editorPane)
-    // TODO: 2022-01-10 Maybe we need something here (Instantiate the button for reachability) 
+    val scrollPane = scrollPaneWithCorner(this, ui.scrollPane, corner)
     component = DocumentationPopupPane(ui.scrollPane).also {
       it.add(toolbarComponent, BorderLayout.NORTH)
-      it.add(scrollPaneWithCorner(this, ui.scrollPane, corner), BorderLayout.CENTER)
+      it.add(scrollPane, BorderLayout.CENTER)
     }
 
     openInToolwindowAction.registerCustomShortcutSet(component, this)
@@ -133,6 +133,16 @@ internal class DocumentationPopupUI(
     val editorPane = ui.editorPane
     editorPane.setHint(popup)
     PopupDragListener.dragPopupByComponent(popup, toolbarComponent)
+  }
+
+  fun showDocumentationPane() {
+    this.component.components[0].isVisible = true
+    this.component.components[1].isVisible = true
+  }
+
+  fun hideDocumentationPane() {
+    this.component.components[0].isVisible = false
+    this.component.components[1].isVisible = false
   }
 
   fun updatePopup(updater: suspend () -> Unit) {
