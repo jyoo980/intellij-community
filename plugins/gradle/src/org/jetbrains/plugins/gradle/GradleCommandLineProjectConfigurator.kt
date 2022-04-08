@@ -1,11 +1,11 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.gradle
 
 import com.intellij.ide.CommandLineInspectionProgressReporter
 import com.intellij.ide.CommandLineInspectionProjectConfigurator
 import com.intellij.ide.CommandLineInspectionProjectConfigurator.ConfiguratorContext
 import com.intellij.openapi.application.PathManager
-import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.externalSystem.autoimport.AutoImportProjectTracker
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationListenerAdapter
@@ -16,6 +16,9 @@ import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.registry.Registry
+import org.jetbrains.plugins.gradle.service.notification.ExternalAnnotationsProgressNotificationListener
+import org.jetbrains.plugins.gradle.service.notification.ExternalAnnotationsProgressNotificationManager
+import org.jetbrains.plugins.gradle.service.notification.ExternalAnnotationsTaskId
 import org.jetbrains.plugins.gradle.service.project.open.createLinkSettings
 import org.jetbrains.plugins.gradle.settings.GradleImportHintService
 import org.jetbrains.plugins.gradle.settings.GradleSettings
@@ -28,11 +31,9 @@ import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
-private val LOG = Logger.getInstance(GradleCommandLineProjectConfigurator::class.java)
+private val LOG = logger<GradleCommandLineProjectConfigurator>()
 
 private val gradleLogWriter = BufferedWriter(FileWriter(PathManager.getLogPath() + "/gradle-import.log"))
-
-private val GRADLE_OUTPUT_LOG = Logger.getInstance("GradleOutput")
 
 private const val DISABLE_GRADLE_AUTO_IMPORT = "external.system.auto.import.disabled"
 private const val DISABLE_ANDROID_GRADLE_PROJECT_STARTUP_ACTIVITY = "android.gradle.project.startup.activity.disabled"
@@ -62,13 +63,20 @@ class GradleCommandLineProjectConfigurator : CommandLineInspectionProjectConfigu
     }
     val progressManager = ExternalSystemProgressNotificationManager.getInstance()
     val notificationListener = StateNotificationListener(project)
+
+    val externalAnnotationsNotificationManager = ExternalAnnotationsProgressNotificationManager.getInstance()
+    val externalAnnotationsProgressListener = StateExternalAnnotationNotificationListener()
+
     try {
+      externalAnnotationsNotificationManager.addNotificationListener(externalAnnotationsProgressListener)
       progressManager.addNotificationListener(notificationListener)
       importProjects(project)
       notificationListener.waitForImportEnd()
+      externalAnnotationsProgressListener.waitForResolveExternalAnnotationEnd()
     }
     finally {
       progressManager.removeNotificationListener(notificationListener)
+      externalAnnotationsNotificationManager.removeNotificationListener(externalAnnotationsProgressListener)
     }
   }
 
@@ -121,6 +129,24 @@ class GradleCommandLineProjectConfigurator : CommandLineInspectionProjectConfigu
     return false
   }
 
+  private class StateExternalAnnotationNotificationListener : ExternalAnnotationsProgressNotificationListener {
+    private val externalAnnotationsState = ConcurrentHashMap<ExternalAnnotationsTaskId, CompletableFuture<ExternalAnnotationsTaskId>>()
+
+    override fun onStartResolve(id: ExternalAnnotationsTaskId) {
+      externalAnnotationsState[id] = CompletableFuture()
+      LOG.info("Gradle resolving external annotations started ${id.projectId}")
+    }
+
+    override fun onFinishResolve(id: ExternalAnnotationsTaskId) {
+      val feature = externalAnnotationsState[id] ?: return
+      feature.complete(id)
+      LOG.info("Gradle resolving external annotations completed ${id.projectId}")
+    }
+
+    fun waitForResolveExternalAnnotationEnd() {
+      externalAnnotationsState.values.forEach { it.get() }
+    }
+  }
 
   class StateNotificationListener(private val project: Project) : ExternalSystemTaskNotificationListenerAdapter() {
     private val externalSystemState = ConcurrentHashMap<ExternalSystemTaskId, CompletableFuture<ExternalSystemTaskId>>()

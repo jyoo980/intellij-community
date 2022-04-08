@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.wm.impl.welcomeScreen;
 
 import com.intellij.icons.AllIcons;
@@ -13,7 +13,6 @@ import com.intellij.ide.plugins.PluginDropHandler;
 import com.intellij.ide.ui.LafManager;
 import com.intellij.ide.ui.LafManagerListener;
 import com.intellij.idea.SplashManager;
-import com.intellij.jdkEx.JdkEx;
 import com.intellij.notification.NotificationsManager;
 import com.intellij.notification.impl.NotificationsManagerImpl;
 import com.intellij.openapi.Disposable;
@@ -36,10 +35,7 @@ import com.intellij.openapi.wm.impl.IdeGlassPaneImpl;
 import com.intellij.openapi.wm.impl.IdeMenuBar;
 import com.intellij.openapi.wm.impl.customFrameDecorations.header.CustomFrameDialogContent;
 import com.intellij.openapi.wm.impl.customFrameDecorations.header.DefaultFrameHeader;
-import com.intellij.ui.AppUIUtil;
-import com.intellij.ui.BalloonLayout;
-import com.intellij.ui.JBColor;
-import com.intellij.ui.ScreenUtil;
+import com.intellij.ui.*;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.ui.components.labels.ActionLink;
@@ -53,8 +49,8 @@ import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.ui.*;
 import com.intellij.util.ui.accessibility.AccessibleContextAccessor;
 import com.intellij.util.ui.update.UiNotifyConnector;
+import com.jetbrains.JBR;
 import net.miginfocom.swing.MigLayout;
-import org.jdom.internal.SystemProperty;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -76,10 +72,10 @@ import static com.intellij.util.ObjectUtils.chooseNotNull;
  */
 public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, AccessibleContextAccessor {
   @SuppressWarnings("StaticNonFinalField")
-  public static boolean USE_TABBED_WELCOME_SCREEN = Boolean.parseBoolean(SystemProperty.get("use.tabbed.welcome.screen", "true"));
+  public static boolean USE_TABBED_WELCOME_SCREEN = Boolean.parseBoolean(System.getProperty("use.tabbed.welcome.screen", "true"));
 
   public static final String BOTTOM_PANEL = "BOTTOM_PANEL";
-  public static final int DEFAULT_HEIGHT = USE_TABBED_WELCOME_SCREEN ? 600 : 460;
+  public static final int DEFAULT_HEIGHT = USE_TABBED_WELCOME_SCREEN ? 650 : 460;
   public static final int MAX_DEFAULT_WIDTH = 800;
   private final AbstractWelcomeScreen myScreen;
   private WelcomeBalloonLayoutImpl myBalloonLayout;
@@ -159,7 +155,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
     Disposer.register(app, this);
 
     UIUtil.decorateWindowHeader(getRootPane());
-    UIUtil.setTransparentTitleBar(this, getRootPane(), runnable -> Disposer.register(this, () -> runnable.run()));
+    ToolbarUtil.setTransparentTitleBar(this, getRootPane(), runnable -> Disposer.register(this, () -> runnable.run()));
 
     app.invokeLater(
       () -> ((NotificationsManagerImpl)NotificationsManager.getNotificationsManager()).dispatchEarlyNotifications(),
@@ -213,7 +209,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
   @Override
   public void addNotify() {
     if (IdeFrameDecorator.isCustomDecorationActive()) {
-      JdkEx.setHasCustomDecoration(this);
+      JBR.getCustomWindowDecoration().setCustomDecorationEnabled(this, true);
     }
     super.addNotify();
   }
@@ -249,6 +245,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
     return accessibleContext;
   }
 
+  @SuppressWarnings("WeakerAccess")
   protected String getWelcomeFrameTitle() {
     return WelcomeScreenComponentFactory.getApplicationTitle();
   }
@@ -267,7 +264,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
     private final DefaultActionGroup myTouchbarActions = new DefaultActionGroup();
     private boolean inDnd;
 
-    FlatWelcomeScreen() {
+    private FlatWelcomeScreen() {
       setBackground(WelcomeScreenUIManager.getMainBackground());
       if (RecentProjectListActionProvider.getInstance().getActions(false, true).size() > 0) {
         JComponent recentProjects = WelcomeScreenComponentFactory.createRecentProjects(this);
@@ -417,7 +414,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
       mainPanel.setOpaque(false);
 
       JPanel panel = new JPanel(new VerticalLayout(JBUI.scale(5))) {
-        Component firstAction = null;
+        private Component firstAction = null;
 
         @Override
         public Component add(Component comp) {
@@ -457,7 +454,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
             icon = IconUtil.colorize(icon, new JBColor(0x6e6e6e, 0xafb1b3));
           }
           action = ActionGroupPanelWrapper.wrapGroups(action, this);
-          @SuppressWarnings("deprecation") ActionLink link = new ActionLink(text, icon, action, null, ActionPlaces.WELCOME_SCREEN);
+          ActionLink link = new ActionLink(text, icon, action, null, ActionPlaces.WELCOME_SCREEN);
           link.setFocusable(false);  // don't allow focus, as the containing panel is going to be focusable
           link.setPaintUnderline(false);
           link.setNormalColor(WelcomeScreenUIManager.getLinkNormalColor());
@@ -480,10 +477,10 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
     }
   }
 
-  @SuppressWarnings({"unused", "IdentifierGrammar"})
+  @SuppressWarnings({"unused", "IdentifierGrammar", "WeakerAccess"})
   protected void extendActionsGroup(JPanel panel) { }
 
-  @SuppressWarnings("unused")
+  @SuppressWarnings({"unused", "WeakerAccess"})
   protected void onFirstActionShown(@NotNull Component action) { }
 
   @Override

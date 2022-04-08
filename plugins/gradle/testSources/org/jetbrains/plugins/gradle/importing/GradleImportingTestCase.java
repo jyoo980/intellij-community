@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.gradle.importing;
 
 import com.intellij.compiler.CompilerTestUtil;
@@ -13,7 +13,7 @@ import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder;
 import com.intellij.openapi.externalSystem.model.ProjectSystemId;
 import com.intellij.openapi.externalSystem.model.settings.ExternalSystemExecutionSettings;
 import com.intellij.openapi.externalSystem.service.execution.TestUnknownSdkResolver;
-import com.intellij.openapi.externalSystem.settings.ExternalSystemSettingsListenerAdapter;
+import com.intellij.openapi.externalSystem.settings.ExternalSystemSettingsListener;
 import com.intellij.openapi.externalSystem.test.JavaExternalSystemImportingTestCase;
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.externalSystem.util.environment.Environment;
@@ -55,6 +55,7 @@ import org.jetbrains.plugins.gradle.settings.GradleSettings;
 import org.jetbrains.plugins.gradle.settings.GradleSystemSettings;
 import org.jetbrains.plugins.gradle.tooling.VersionMatcherRule;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
+import org.jetbrains.plugins.gradle.util.GradleJvmSupportMatriciesKt;
 import org.jetbrains.plugins.gradle.util.GradleUtil;
 import org.junit.Assume;
 import org.junit.Rule;
@@ -197,7 +198,7 @@ public abstract class GradleImportingTestCase extends JavaExternalSystemImportin
     JavaVersion javaRuntimeVersion = JavaVersion.current();
     assumeTestJavaRuntime(javaRuntimeVersion);
     GradleVersion baseVersion = getCurrentGradleBaseVersion();
-    if (javaRuntimeVersion.feature > 9 && baseVersion.compareTo(GradleVersion.version("4.8")) < 0) {
+    if (!GradleJvmSupportMatriciesKt.isSupported(baseVersion, javaRuntimeVersion)) {
       // fix exception of FJP at JavaHomeFinder.suggestHomePaths => ... => EnvironmentUtil.getEnvironmentMap => CompletableFuture.<clinit>
       IdeaForkJoinWorkerThreadFactory.setupForkJoinCommonPool(true);
       List<String> paths = JavaHomeFinder.suggestHomePaths(true);
@@ -205,13 +206,12 @@ public abstract class GradleImportingTestCase extends JavaExternalSystemImportin
         if (JdkUtil.checkForJdk(path)) {
           JdkVersionDetector.JdkVersionInfo jdkVersionInfo = JdkVersionDetector.getInstance().detectJdkVersionInfo(path);
           if (jdkVersionInfo == null) continue;
-          int feature = jdkVersionInfo.version.feature;
-          if (feature > 6 && feature < 9) {
+          if (GradleJvmSupportMatriciesKt.isSupported(baseVersion, jdkVersionInfo.version)) {
             return path;
           }
         }
       }
-      Assume.assumeTrue("Cannot find JDK for Gradle, checked paths: " + paths, false);
+      fail("Cannot find JDK for Gradle, checked paths: " + paths);
       return null;
     }
     else {
@@ -299,10 +299,9 @@ public abstract class GradleImportingTestCase extends JavaExternalSystemImportin
 
   @Override
   protected void importProject(Boolean skipIndexing) {
-    ExternalSystemApiUtil.subscribe(myProject, GradleConstants.SYSTEM_ID, new ExternalSystemSettingsListenerAdapter() {
+    ExternalSystemApiUtil.subscribe(myProject, GradleConstants.SYSTEM_ID, new ExternalSystemSettingsListener<>() {
       @Override
       public void onProjectsLinked(@NotNull Collection settings) {
-        super.onProjectsLinked(settings);
         final Object item = ContainerUtil.getFirstItem(settings);
         if (item instanceof GradleProjectSettings) {
           ((GradleProjectSettings)item).setGradleJvm(GRADLE_JDK_NAME);

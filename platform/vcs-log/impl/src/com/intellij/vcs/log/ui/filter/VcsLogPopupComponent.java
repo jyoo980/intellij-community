@@ -4,6 +4,7 @@ package com.intellij.vcs.log.ui.filter;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.DataManager;
 import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionGroupUtil;
 import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
@@ -19,6 +20,7 @@ import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.accessibility.AccessibleContextDelegate;
 import com.intellij.vcs.log.VcsLogBundle;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -48,7 +50,7 @@ public abstract class VcsLogPopupComponent extends JPanel {
   }
 
   public JComponent initUi() {
-    myNameLabel = shouldDrawLabel() ? new DynamicLabel(() -> myDisplayName.get() + ": ") : null;
+    myNameLabel = shouldDrawLabel() ? new DynamicLabel(() -> myDisplayName.get() + (isValueSelected() ? ": " : "")) : null;
     myValueLabel = new DynamicLabel(this::getCurrentText);
     setDefaultForeground();
     setFocusable(true);
@@ -58,9 +60,10 @@ public abstract class VcsLogPopupComponent extends JPanel {
     if (myNameLabel != null) add(myNameLabel);
     add(myValueLabel);
     add(Box.createHorizontalStrut(GAP_BEFORE_ARROW));
-    add(new JLabel(AllIcons.Ide.Statusbar_arrows));
+    add(new JLabel(AllIcons.General.ArrowDown));
 
     installChangeListener(() -> {
+      setDefaultForeground();
       myValueLabel.revalidate();
       myValueLabel.repaint();
     });
@@ -76,12 +79,16 @@ public abstract class VcsLogPopupComponent extends JPanel {
 
   public abstract String getCurrentText();
 
-  public abstract void installChangeListener(@NotNull Runnable onChange);
-
+  /**
+   * @return text that shows when filter value not selected (e.g. "All")
+   */
   @NotNull
-  protected Color getDefaultSelectorForeground() {
-    return StartupUiUtil.isUnderDarcula() ? UIUtil.getLabelForeground() : UIUtil.getInactiveTextColor().darker().darker();
-  }
+  @Nls
+  public abstract String getEmptyFilterValue();
+
+  protected abstract boolean isValueSelected();
+
+  public abstract void installChangeListener(@NotNull Runnable onChange);
 
   protected boolean shouldIndicateHovering() {
     return true;
@@ -147,9 +154,9 @@ public abstract class VcsLogPopupComponent extends JPanel {
 
   private void setDefaultForeground() {
     if (myNameLabel != null) {
-      myNameLabel.setForeground(StartupUiUtil.isUnderDarcula() ? UIUtil.getLabelForeground() : UIUtil.getInactiveTextColor());
+      myNameLabel.setForeground(isValueSelected() ? UIUtil.getLabelInfoForeground() : UIUtil.getLabelForeground());
     }
-    myValueLabel.setForeground(getDefaultSelectorForeground());
+    myValueLabel.setForeground(UIUtil.getLabelForeground());
   }
 
   private void setOnHoverForeground() {
@@ -169,12 +176,12 @@ public abstract class VcsLogPopupComponent extends JPanel {
   @NotNull
   protected ListPopup createPopupMenu() {
     return JBPopupFactory.getInstance().
-      createActionGroupPopup(null, createActionGroup(), DataManager.getInstance().getDataContext(this),
+      createActionGroupPopup(null, ActionGroupUtil.forceRecursiveUpdateInBackground(createActionGroup()), DataManager.getInstance().getDataContext(this),
                              JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false);
   }
 
-  private static Border createFocusedBorder() {
-    return new FilledRoundedBorder(UIUtil.getFocusedBorderColor(), ARC_SIZE, BORDER_SIZE);
+  protected Border createFocusedBorder() {
+    return new FilledRoundedBorder(UIUtil.getFocusedBorderColor(), ARC_SIZE, BORDER_SIZE, false);
   }
 
   protected Border createUnfocusedBorder() {
@@ -189,11 +196,13 @@ public abstract class VcsLogPopupComponent extends JPanel {
     private final Color myColor;
     private final int myThickness;
     private final int myArcSize;
+    private final boolean myThinBorder;
 
-    public FilledRoundedBorder(@NotNull Color color, int arcSize, int thickness) {
+    public FilledRoundedBorder(@NotNull Color color, int arcSize, int thickness, boolean thinBorder) {
       myColor = color;
       myThickness = thickness;
       myArcSize = arcSize;
+      myThinBorder = thinBorder;
     }
 
     @Override
@@ -202,7 +211,7 @@ public abstract class VcsLogPopupComponent extends JPanel {
 
       g.setColor(myColor);
 
-      int thickness = JBUI.scale(myThickness);
+      int thickness = JBUI.scale(myThinBorder ? 1 : myThickness);
       int arcSize = JBUI.scale(myArcSize);
       Area area = new Area(new RoundRectangle2D.Double(x, y, width, height, arcSize, arcSize));
       int innerArc = Math.max(arcSize - thickness, 0);
@@ -228,7 +237,7 @@ public abstract class VcsLogPopupComponent extends JPanel {
   private static final class DynamicLabel extends JLabel {
     private final Supplier<@NlsContexts.Label String> myText;
 
-    private DynamicLabel(@NotNull Supplier<@NlsContexts.Label String> text) {myText = text;}
+    private DynamicLabel(@NotNull Supplier<@NlsContexts.Label String> text) { myText = text; }
 
     @Override
     @NlsContexts.Label
@@ -259,7 +268,7 @@ public abstract class VcsLogPopupComponent extends JPanel {
 
     @Override
     public String getAccessibleName() {
-      return VcsLogBundle.message("vcs.log.Accessibility.filter.label", myNameLabel.getText(), myValueLabel.getText());
+      return VcsLogBundle.message("vcs.log.filter.accessible.name", myNameLabel.getText(), myValueLabel.getText());
     }
 
     @Override

@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.reference;
 
 import com.intellij.openapi.application.ApplicationManager;
@@ -28,7 +28,7 @@ public class RefFieldImpl extends RefJavaElementImpl implements RefField {
   }
 
   @Override
-  protected void initialize() {
+  protected synchronized void initialize() {
     PsiElement psi = getPsiElement();
     LOG.assertTrue(psi != null);
     UField uElement = getUastElement();
@@ -161,7 +161,12 @@ public class RefFieldImpl extends RefJavaElementImpl implements RefField {
   public String getExternalName() {
     return ReadAction.compute(() -> {
       UField uField = getUastElement();
-      if (uField == null) return null;
+      if (uField == null) {
+        WritableRefEntity owner = getOwner();
+        String parentName = owner != null ? owner.getName() : "no parent class";
+        LOG.error("No uField found for psi: " + getPsiElement() + ", name: " + getName() + ", " + parentName);
+        return null;
+      }
       return PsiFormatUtil.getExternalName((PsiModifierListOwner)uField.getJavaPsi());
     });
   }

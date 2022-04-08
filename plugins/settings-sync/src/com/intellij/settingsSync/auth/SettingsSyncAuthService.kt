@@ -6,9 +6,9 @@ import com.intellij.ui.JBAccountInfoService
 import com.intellij.util.EventDispatcher
 import java.util.*
 
-class SettingsSyncAuthService {
+internal class SettingsSyncAuthService {
   companion object {
-    fun getInstance() = ApplicationManager.getApplication().getService(SettingsSyncAuthService::class.java)
+    fun getInstance(): SettingsSyncAuthService = ApplicationManager.getApplication().getService(SettingsSyncAuthService::class.java)
   }
 
   private val evenDispatcher = EventDispatcher.create(Listener::class.java)
@@ -31,6 +31,8 @@ class SettingsSyncAuthService {
         })
     }
   }
+
+  fun isLoginAvailable(): Boolean = JBAccountInfoService.getInstance() != null
 
   fun addListener(listener: Listener, disposable: Disposable) {
     evenDispatcher.addListener(listener, disposable)

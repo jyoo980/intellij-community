@@ -9,6 +9,7 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.util.BuildNumber
@@ -16,6 +17,7 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.FileSystemUtil
 import com.intellij.openapi.util.io.FileUtil
+import com.intellij.remoteDev.RemoteDevSystemSettings
 import com.intellij.remoteDev.RemoteDevUtilBundle
 import com.intellij.remoteDev.connection.CodeWithMeSessionInfoProvider
 import com.intellij.remoteDev.connection.StunTurnServerInfo
@@ -24,6 +26,7 @@ import com.intellij.util.application
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.concurrency.EdtScheduledExecutorService
 import com.intellij.util.io.*
+import com.intellij.util.io.HttpRequests.HttpStatusException
 import com.intellij.util.system.CpuArch
 import com.intellij.util.text.VersionComparatorUtil
 import com.jetbrains.infra.pgpVerifier.JetBrainsPgpConstants
@@ -44,6 +47,7 @@ import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -107,7 +111,7 @@ object CodeWithMeClientDownloader {
 
     val clientDistributionName = getClientDistributionName(clientBuildVersion)
 
-    val clientDownloadUrl = "${config.clientDownloadLocation}$clientDistributionName-$hostBuildNumber$platformSuffix"
+    val clientDownloadUrl = "${config.clientDownloadUrl}$clientDistributionName-$hostBuildNumber$platformSuffix"
 
     val platformString = when {
       SystemInfo.isLinux -> "linux-x64"
@@ -124,10 +128,14 @@ object CodeWithMeClientDownloader {
 
     val jdkVersion = jreBuildParts[0]
     val jdkBuild = jreBuildParts[1]
-    val jreDownloadUrl = "${config.jreDownloadLocation}jbr_jcef-$jdkVersion-$platformString-b${jdkBuild}.tar.gz"
+    val jreDownloadUrl = "${config.jreDownloadUrl}jbr_jcef-$jdkVersion-$platformString-b${jdkBuild}.tar.gz"
 
     val clientName = "$clientDistributionName-$hostBuildNumber"
     val jreName = jreDownloadUrl.substringAfterLast('/').removeSuffix(".tar.gz")
+
+    val pgpPublicKeyUrl = if (unattendedMode) {
+      RemoteDevSystemSettings.getPgpPublicKeyUrl().value
+    } else null
 
     val sessionInfo = object : CodeWithMeSessionInfoProvider {
       override val hostBuildNumber = hostBuildNumber
@@ -138,8 +146,7 @@ object CodeWithMeClientDownloader {
       override val compatibleJreUrl = jreDownloadUrl
       override val hostFeaturesToEnable: Set<String>? = null
       override val stunTurnServers: List<StunTurnServerInfo>? = null
-      override val turnAllocationServerInfo: StunTurnServerInfo? = null
-      override val downloadPgpPublicKeyUrl: String? = null
+      override val downloadPgpPublicKeyUrl: String? = pgpPublicKeyUrl
     }
 
     LOG.info("Generated session info: $sessionInfo")
@@ -158,11 +165,17 @@ object CodeWithMeClientDownloader {
     jdkBuildProgressIndicator.text = RemoteDevUtilBundle.message("thinClientDownloader.checking")
 
     val clientDistributionName = getClientDistributionName(clientBuildVersion)
-    val clientJdkDownloadUrl = "${config.clientDownloadLocation}$clientDistributionName-$clientBuildVersion-jdk-build.txt"
+    val clientJdkDownloadUrl = "${config.clientDownloadUrl}$clientDistributionName-$clientBuildVersion-jdk-build.txt"
     LOG.info("Downloading from $clientJdkDownloadUrl")
-    val jdkBuild = HttpRequests
-      .request(clientJdkDownloadUrl)
-      .readString(jdkBuildProgressIndicator)
+
+    val tempFile = Files.createTempFile("jdk-build", "txt")
+    val jdkBuild = try {
+      downloadWithRetries(URI(clientJdkDownloadUrl), tempFile, EmptyProgressIndicator()).let {
+        tempFile.readText()
+      }
+    } finally {
+      Files.delete(tempFile)
+    }
 
     val sessionInfo = createSessionInfo(clientBuildVersion, jdkBuild, true)
     return downloadClientAndJdk(sessionInfo, progressIndicator.createSubProgress(0.9))
@@ -175,7 +188,6 @@ object CodeWithMeClientDownloader {
    * @returns Pair(path/to/thin/client, path/to/jre)
    *
    * Update this method (any jdk-related stuff) together with:
-   *  `setupJdk.gradle`
    *  `org/jetbrains/intellij/build/impl/BundledJreManager.groovy`
    */
   fun downloadClientAndJdk(clientBuildVersion: String,
@@ -289,8 +301,7 @@ object CodeWithMeClientDownloader {
 
           try {
             fun download(url: URI, path: Path) {
-              LOG.info("Downloading $url -> $path")
-              HttpRequests.request(url.toString()).saveToFile(path, downloadingDataProgressIndicator)
+              downloadWithRetries(url, path, downloadingDataProgressIndicator)
             }
 
             download(data.url, data.archivePath)
@@ -396,6 +407,55 @@ object CodeWithMeClientDownloader {
   private fun isAlreadyDownloaded(fileData: DownloadableFileData): Boolean {
     val extractDirectory = FileManifestUtil.getExtractDirectory(fileData.targetPath, fileData.includeInManifest)
     return extractDirectory.isUpToDate && !fileData.targetPath.fileName.toString().contains("SNAPSHOT")
+  }
+
+  private fun downloadWithRetries(url: URI, path: Path, progressIndicator: ProgressIndicator) {
+    require(application.isUnitTestMode || !application.isDispatchThread) { "This method should not be called on UI thread" }
+
+    val MAX_ATTEMPTS = 5
+    val BACKOFF_INITIAL_DELAY_MS = 500L
+
+    var delayMs = BACKOFF_INITIAL_DELAY_MS
+
+    for (i in 1..MAX_ATTEMPTS) {
+      try {
+        LOG.info("Downloading from $url to ${path.absolutePathString()}, attempt $i of $MAX_ATTEMPTS")
+
+        when (url.scheme) {
+          "http", "https" -> {
+            HttpRequests.request(url.toString()).saveToFile(path, progressIndicator)
+          }
+          "file" -> {
+            Files.copy(url.toPath(), path, StandardCopyOption.REPLACE_EXISTING)
+          }
+          else -> {
+            error("scheme ${url.scheme} is not supported")
+          }
+        }
+
+        LOG.info("Download from $url to ${path.absolutePathString()} succeeded on attempt $i of $MAX_ATTEMPTS")
+        return
+      }
+      catch (e: Throwable) {
+        if (e is ControlFlowException) throw e
+
+        if (e is HttpStatusException) {
+          if (e.statusCode in 400..499) {
+            LOG.warn("Received ${e.statusCode} with message ${e.message}, will not retry")
+            throw e
+          }
+        }
+
+        if (i < MAX_ATTEMPTS) {
+          LOG.warn("Attempt $i of $MAX_ATTEMPTS to download from $url to ${path.absolutePathString()} failed, retrying in $delayMs ms", e)
+          Thread.sleep(delayMs)
+          delayMs = (delayMs * 1.5).toLong()
+        } else {
+          LOG.warn("Failed to download from $url to ${path.absolutePathString()} in $MAX_ATTEMPTS attempts", e)
+          throw e
+        }
+      }
+    }
   }
 
   private fun findCwmGuestHome(guestRoot: Path): Path {

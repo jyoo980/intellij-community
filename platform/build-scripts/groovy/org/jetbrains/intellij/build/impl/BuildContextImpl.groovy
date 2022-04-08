@@ -59,7 +59,7 @@ final class BuildContextImpl extends BuildContext {
     MacDistributionCustomizer macDistributionCustomizer = productProperties.createMacCustomizer(projectHome)
 
     def compilationContext = CompilationContextImpl.create(communityHome, projectHome,
-                                                           createBuildOutputRootEvaluator(projectHome, productProperties), options)
+                                                           createBuildOutputRootEvaluator(projectHome, productProperties, options), options)
 
     return new BuildContextImpl(compilationContext, productProperties,
                                 windowsDistributionCustomizer, linuxDistributionCustomizer, macDistributionCustomizer,
@@ -84,8 +84,8 @@ final class BuildContextImpl extends BuildContext {
     buildNumber = options.buildNumber ?: readSnapshotBuildNumber(paths.communityHomeDir)
 
     xBootClassPathJarNames = productProperties.xBootClassPathJarNames
-    bootClassPathJarNames = List.of("util.jar")
-    applicationInfo = new ApplicationInfoProperties(project, productProperties, messages).patch(this)
+    bootClassPathJarNames = List.of("util.jar", "util_rt.jar")
+    applicationInfo = new ApplicationInfoProperties(project, productProperties, options, messages).patch(this)
     if (productProperties.productCode == null && applicationInfo.productCode != null) {
       productProperties.productCode = applicationInfo.productCode
     }
@@ -134,9 +134,10 @@ final class BuildContextImpl extends BuildContext {
   }
 
   private static BiFunction<JpsProject, BuildMessages, String> createBuildOutputRootEvaluator(String projectHome,
-                                                                                              ProductProperties productProperties) {
+                                                                                              ProductProperties productProperties,
+                                                                                              BuildOptions buildOptions) {
     return { JpsProject project, BuildMessages messages ->
-      ApplicationInfoProperties applicationInfo = new ApplicationInfoProperties(project, productProperties, messages)
+      ApplicationInfoProperties applicationInfo = new ApplicationInfoProperties(project, productProperties, buildOptions, messages)
       return "$projectHome/out/${productProperties.getOutputDirectoryName(applicationInfo)}"
     } as BiFunction<JpsProject, BuildMessages, String>
   }
@@ -149,11 +150,6 @@ final class BuildContextImpl extends BuildContext {
   @Override
   AntBuilder getAnt() {
     compilationContext.ant
-  }
-
-  @Override
-  GradleRunner getGradle() {
-    compilationContext.gradle
   }
 
   @Override
@@ -380,7 +376,7 @@ final class BuildContextImpl extends BuildContext {
     BuildOptions options = new BuildOptions()
     options.useCompiledClassesFromProjectOutput = true
     CompilationContextImpl compilationContextCopy = compilationContext
-      .createCopy(ant, messages, options, createBuildOutputRootEvaluator(paths.projectHome, productProperties))
+      .createCopy(ant, messages, options, createBuildOutputRootEvaluator(paths.projectHome, productProperties, options))
     BuildContextImpl copy = new BuildContextImpl(compilationContextCopy, productProperties,
                                                  windowsDistributionCustomizer, linuxDistributionCustomizer, macDistributionCustomizer,
                                                  proprietaryBuildTools, new ConcurrentLinkedQueue<>())
@@ -438,9 +434,32 @@ final class BuildContextImpl extends BuildContext {
     }
 
     if (options.bundledRuntimeVersion >= 17) {
-      jvmArgs.addAll(OpenedPackages.INSTANCE)
+      jvmArgs.addAll(OpenedPackages.getCommandLineArguments(this))
     }
 
     return jvmArgs
+  }
+
+  @Override
+  OsSpecificDistributionBuilder getOsDistributionBuilder(OsFamily os, Path ideaProperties) {
+    OsSpecificDistributionBuilder builder
+    switch (os) {
+      case OsFamily.WINDOWS:
+        builder = windowsDistributionCustomizer?.with {
+          new WindowsDistributionBuilder(this, it, ideaProperties, "$applicationInfo")
+        }
+        break
+      case OsFamily.LINUX:
+        builder = linuxDistributionCustomizer?.with {
+          new LinuxDistributionBuilder(this, it, ideaProperties)
+        }
+        break
+      case OsFamily.MACOS:
+        builder = macDistributionCustomizer?.with {
+          new MacDistributionBuilder(this, it, ideaProperties)
+        }
+        break
+    }
+    return builder
   }
 }

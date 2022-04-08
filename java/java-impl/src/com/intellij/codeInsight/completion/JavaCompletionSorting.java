@@ -64,9 +64,14 @@ public final class JavaCompletionSorting {
     }
 
     PsiElement parent = position.getParent();
-    if (parent instanceof PsiReferenceExpression && !(parent instanceof PsiMethodReferenceExpression) &&
-        !ExpressionUtils.isVoidContext((PsiReferenceExpression)parent)) {
-      sorter = sorter.weighBefore("middleMatching", new PreferNonVoid());
+    if (parent instanceof PsiReferenceExpression && !(parent instanceof PsiMethodReferenceExpression)) {
+      PsiExpression context = (PsiReferenceExpression)parent;
+      if (context.getParent() instanceof PsiMethodCallExpression) {
+        context = (PsiExpression)context.getParent();
+      }
+      if (!ExpressionUtils.isVoidContext(context)) {
+        sorter = sorter.weighBefore("middleMatching", new PreferNonVoid());
+      }
     }
 
     List<LookupElementWeigher> afterPriority = new ArrayList<>();
@@ -98,7 +103,7 @@ public final class JavaCompletionSorting {
     if (ContainerUtil.or(expectedTypes, info -> !info.getType().equals(PsiType.VOID))) {
       afterStats.add(new PreferNonGeneric());
     }
-    Collections.addAll(afterStats, new PreferAccessible(position), new PreferSimple());
+    afterStats.add(new PreferSimple());
 
     sorter = sorter.weighAfter("stats", afterStats.toArray(new LookupElementWeigher[0]));
     sorter = sorter.weighAfter("proximity", afterProximity.toArray(new LookupElementWeigher[0]));
@@ -469,46 +474,6 @@ public final class JavaCompletionSorting {
     maybeExpected,
     normal,
     unexpected,
-  }
-
-  private static class PreferAccessible extends LookupElementWeigher {
-    private final PsiElement myPosition;
-
-    PreferAccessible(PsiElement position) {
-      super("accessible");
-      myPosition = position;
-    }
-
-    private enum MyEnum {
-      NORMAL,
-      DISCOURAGED,
-      DEPRECATED,
-      INACCESSIBLE,
-    }
-
-    @NotNull
-    @Override
-    public MyEnum weigh(@NotNull LookupElement element) {
-      final Object object = element.getObject();
-      if (object instanceof PsiDocCommentOwner) {
-        final PsiDocCommentOwner member = (PsiDocCommentOwner)object;
-        if (!JavaPsiFacade.getInstance(member.getProject()).getResolveHelper().isAccessible(member, myPosition, null)) return MyEnum.INACCESSIBLE;
-        if (JavaCompletionUtil.isEffectivelyDeprecated(member)) return MyEnum.DEPRECATED;
-        if (member instanceof PsiClass) {
-          PsiFile file = member.getContainingFile();
-          if (file instanceof PsiJavaFile) {
-            String packageName = ((PsiJavaFile)file).getPackageName();
-            if (packageName.startsWith("com.sun.") || packageName.startsWith("sun.") || packageName.startsWith("org.omg.")) {
-              return MyEnum.DISCOURAGED;
-            }
-          }
-          if ("java.awt.List".equals(((PsiClass)member).getQualifiedName())) {
-            return MyEnum.DISCOURAGED;
-          }
-        }
-      }
-      return MyEnum.NORMAL;
-    }
   }
 
   private static class PreferNonGeneric extends LookupElementWeigher {

@@ -5,7 +5,6 @@ import com.github.benmanes.caffeine.cache.Caffeine
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vcs.VcsException
 import com.intellij.openapi.vfs.VirtualFile
@@ -58,8 +57,7 @@ class MiniDetailsGetter internal constructor(project: Project,
     val taskNumber = currentTaskIndex++
     toLoad.forEach(IntConsumer { cacheCommit(it, taskNumber) })
     loader.queue(TaskDescriptor(toLoad))
-    // now it is in the cache as "Loading Details" (cacheCommit puts it there)
-    return cache.getIfPresent(commit)!!
+    return cache.getIfPresent(commit) ?: createPlaceholderCommit(commit, taskNumber)
   }
 
   override fun getCommitDataIfAvailable(commit: Int): VcsCommitMetadata? {
@@ -172,7 +170,7 @@ class MiniDetailsGetter internal constructor(project: Project,
       IndexedDetails(dataGetter, storage, commit, taskNumber)
     }
     else {
-      LoadingDetailsImpl(Computable { storage.getCommitId(commit)!! }, taskNumber)
+      LoadingDetailsImpl(storage, commit, taskNumber)
     }
   }
 

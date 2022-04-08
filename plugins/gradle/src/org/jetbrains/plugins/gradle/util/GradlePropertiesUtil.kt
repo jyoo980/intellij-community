@@ -10,6 +10,7 @@ import com.intellij.util.io.isFile
 import org.jetbrains.plugins.gradle.settings.GradleLocalSettings
 import org.jetbrains.plugins.gradle.util.GradleProperties.EMPTY
 import org.jetbrains.plugins.gradle.util.GradleProperties.GradleProperty
+import java.io.IOException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.*
@@ -18,9 +19,18 @@ const val USER_HOME = "user.home"
 const val GRADLE_CACHE_DIR_NAME = ".gradle"
 const val PROPERTIES_FILE_NAME = "gradle.properties"
 const val GRADLE_JAVA_HOME_PROPERTY = "org.gradle.java.home"
+const val GRADLE_LOGGING_LEVEL_PROPERTY = "org.gradle.logging.level"
 
 fun getGradleProperties(project: Project, externalProjectPath: Path): GradleProperties {
-  return getPossiblePropertiesFiles(project, externalProjectPath)
+  return findAndMergeProperties(getPossiblePropertiesFiles(project, externalProjectPath))
+}
+
+fun getGradleProperties(serviceDirectoryStr: String?, externalProjectPath: Path): GradleProperties {
+  return findAndMergeProperties(getPossiblePropertiesFiles(serviceDirectoryStr, externalProjectPath))
+}
+
+private fun findAndMergeProperties(possiblePropertiesFiles: List<Path>): GradleProperties {
+  return possiblePropertiesFiles
     .asSequence()
     .map { it.toAbsolutePath().normalize() }
     .map(::loadGradleProperties)
@@ -35,9 +45,22 @@ private fun getPossiblePropertiesFiles(project: Project, externalProjectPath: Pa
   )
 }
 
+private fun getPossiblePropertiesFiles(serviceDirectoryStr: String?, externalProjectPath: Path): List<Path> {
+  return listOfNotNull(
+    getGradleServiceDirectoryPath(serviceDirectoryStr),
+    getGradleHomePropertiesPath(),
+    getGradleProjectPropertiesPath(externalProjectPath)
+  )
+}
+
 private fun getGradleServiceDirectoryPath(project: Project): Path? {
   val gradleUserHome = GradleLocalSettings.getInstance(project).gradleUserHome ?: return null
   return Paths.get(gradleUserHome, PROPERTIES_FILE_NAME)
+}
+
+
+private fun getGradleServiceDirectoryPath(serviceDirectoryStr: String?): Path? {
+  return serviceDirectoryStr?.let { Paths.get(serviceDirectoryStr, PROPERTIES_FILE_NAME) }
 }
 
 private fun getGradleHomePropertiesPath(): Path? {
@@ -61,7 +84,9 @@ private fun loadGradleProperties(propertiesPath: Path): GradleProperties {
   val properties = loadProperties(propertiesPath) ?: return EMPTY
   val javaHome = properties.getProperty(GRADLE_JAVA_HOME_PROPERTY)
   val javaHomeProperty = javaHome?.let { GradleProperty(it, propertiesPath.toString()) }
-  return GradlePropertiesImpl(javaHomeProperty)
+  val logLevel = properties.getProperty(GRADLE_LOGGING_LEVEL_PROPERTY)
+  val logLevelProperty = logLevel?.let { GradleProperty(it, propertiesPath.toString()) }
+  return GradlePropertiesImpl(javaHomeProperty, logLevelProperty)
 }
 
 private fun loadProperties(propertiesFile: Path): Properties? {
@@ -70,8 +95,12 @@ private fun loadProperties(propertiesFile: Path): Properties? {
   }
 
   val properties = Properties()
-  propertiesFile.inputStream().use {
-    properties.load(it)
+  try {
+    propertiesFile.inputStream().use {
+      properties.load(it)
+    }
+  } catch (_: IOException) {
+    return null
   }
   return properties
 }
@@ -80,8 +109,10 @@ private fun mergeGradleProperties(most: GradleProperties, other: GradlePropertie
   return when {
     most is EMPTY -> other
     other is EMPTY -> most
-    else -> GradlePropertiesImpl(most.javaHomeProperty ?: other.javaHomeProperty)
+    else -> GradlePropertiesImpl(most.javaHomeProperty ?: other.javaHomeProperty,
+    most.gradleLoggingLevel ?: other.gradleLoggingLevel)
   }
 }
 
-private data class GradlePropertiesImpl(override val javaHomeProperty: GradleProperty<String>?) : GradleProperties
+private data class GradlePropertiesImpl(override val javaHomeProperty: GradleProperty<String>?,
+                                        override val gradleLoggingLevel: GradleProperty<String>?) : GradleProperties

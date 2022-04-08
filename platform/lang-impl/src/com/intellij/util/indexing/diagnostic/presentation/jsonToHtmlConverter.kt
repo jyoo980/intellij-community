@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 @file:Suppress("unused", "DuplicatedCode", "HardCodedStringLiteral")
 
 package com.intellij.util.indexing.diagnostic.presentation
@@ -9,7 +9,7 @@ import com.intellij.openapi.util.text.HtmlChunk.*
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.util.indexing.diagnostic.ChangedFilesPushedEvent
 import com.intellij.util.indexing.diagnostic.IndexDiagnosticDumper
-import com.intellij.util.indexing.diagnostic.IndexingJobStatistics
+import com.intellij.util.indexing.diagnostic.IndexingFileSetStatistics
 import com.intellij.util.indexing.diagnostic.JsonSharedIndexDiagnosticEvent
 import com.intellij.util.indexing.diagnostic.dto.*
 import org.intellij.lang.annotations.Language
@@ -73,7 +73,7 @@ fun createAggregateHtml(
                 td(diagnostic.indexingTimes.creatingIteratorsTime.presentableDuration())
                 td(diagnostic.indexingTimes.scanFilesTime.presentableDuration())
                 td(diagnostic.indexingTimes.indexingTime.presentableDuration())
-                td(diagnostic.indexingTimes.contentLoadingTime.presentableDuration())
+                td(diagnostic.indexingTimes.contentLoadingVisibleTime.presentableDuration())
                 td {
                   if (diagnostic.indexingTimes.wasInterrupted) {
                     strong("Cancelled")
@@ -385,16 +385,35 @@ fun JsonIndexDiagnostic.generateHtml(): String {
               tr { td("Total time"); td(times.totalUpdatingTime.presentableDuration()) }
               tr { td("Indexing time"); td(times.indexingTime.presentableDuration()) }
               tr { td("Iterators creation time"); td(times.creatingIteratorsTime.presentableDuration()) }
+              if (IndexDiagnosticDumper.shouldProvideVisibleAndAllThreadsTimeInfo) {
+                tr {
+                  td("Indexing visible time");
+                  td(JsonDuration(
+                    projectIndexingHistory.fileProviderStatistics.sumOf { stat -> stat.totalIndexingVisibleTime.nano }).presentableDuration())
+                }
+                tr {
+                  td("All threads time to visible time ratio");
+                  td(String.format("%.2f", projectIndexingHistory.visibleTimeToAllThreadTimeRatio))
+                }
+              }
               tr { td("Scanning time"); td(times.scanFilesTime.presentableDuration()) }
-              tr { td("Content loading time"); td(times.contentLoadingTime.presentableDuration()) }
+              tr { td("Content loading time"); td(times.contentLoadingVisibleTime.presentableDuration()) }
               tr { td("Pushing properties time"); td(times.pushPropertiesTime.presentableDuration()) }
               tr { td("Running extensions time"); td(times.indexExtensionsTime.presentableDuration()) }
+              tr {
+                td("Separate application time")
+                td(if (times.isAppliedAllValuesSeparately)
+                     StringUtil.formatDuration(times.separateApplyingIndexesVisibleTime.milliseconds)
+                   else
+                     "Applied under read lock"
+                )
+              }
             }
           }
         }
 
         div(id = SECTION_SLOW_FILES_ID) {
-          h1("$SECTION_SLOW_FILES_TITLE (> ${IndexingJobStatistics.SLOW_FILE_PROCESSING_THRESHOLD_MS} ms)")
+          h1("$SECTION_SLOW_FILES_TITLE (> ${IndexingFileSetStatistics.SLOW_FILE_PROCESSING_THRESHOLD_MS} ms)")
           table {
             thead {
               tr {
@@ -442,7 +461,7 @@ fun JsonIndexDiagnostic.generateHtml(): String {
                   (projectIndexingHistory.times.indexingTime.nano * statsPerFileType.partOfTotalProcessingTime.partition).toLong()
                 )
                 val visibleContentLoadingTime = JsonDuration(
-                  (projectIndexingHistory.times.contentLoadingTime.nano * statsPerFileType.partOfTotalContentLoadingTime.partition).toLong()
+                  (projectIndexingHistory.times.contentLoadingVisibleTime.nano * statsPerFileType.partOfTotalContentLoadingTime.partition).toLong()
                 )
                 tr(className = getMinorDataClass(visibleIndexingTime.milliseconds < 500)) {
                   td(statsPerFileType.fileType)
@@ -504,6 +523,7 @@ fun JsonIndexDiagnostic.generateHtml(): String {
         }
 
         val shouldPrintScannedFiles = projectIndexingHistory.scanningStatistics.any { it.scannedFiles.orEmpty().isNotEmpty() }
+        val shouldPrintProviderRoots = projectIndexingHistory.scanningStatistics.any { it.roots.isNotEmpty() }
         div(id = SECTION_SCANNING_ID) {
           h1(SECTION_SCANNING_TITLE)
           table {
@@ -519,6 +539,9 @@ fun JsonIndexDiagnostic.generateHtml(): String {
                 th("Time processing up-to-date files")
                 th("Time updating content-less indexes")
                 th("Time indexing without content")
+                if (shouldPrintProviderRoots) {
+                  th("Roots")
+                }
                 if (shouldPrintScannedFiles) {
                   th("Scanned files")
                 }
@@ -537,6 +560,15 @@ fun JsonIndexDiagnostic.generateHtml(): String {
                   td(scanningStats.timeProcessingUpToDateFiles.presentableDuration())
                   td(scanningStats.timeUpdatingContentLessIndexes.presentableDuration())
                   td(scanningStats.timeIndexingWithoutContent.presentableDuration())
+                  if (shouldPrintProviderRoots) {
+                    td {
+                      textarea {
+                        rawText(
+                          scanningStats.roots.sorted().joinToString("\n")
+                        )
+                      }
+                    }
+                  }
                   if (shouldPrintScannedFiles) {
                     td {
                       textarea {
@@ -577,10 +609,10 @@ fun JsonIndexDiagnostic.generateHtml(): String {
             }
             tbody {
               for (providerStats in projectIndexingHistory.fileProviderStatistics) {
-                tr(className = getMinorDataClass(providerStats.totalIndexingTime.milliseconds < 100 && providerStats.totalNumberOfIndexedFiles < 1000)) {
+                tr(className = getMinorDataClass(providerStats.totalIndexingVisibleTime.milliseconds < 100 && providerStats.totalNumberOfIndexedFiles < 1000)) {
                   td(providerStats.providerName)
-                  td(providerStats.totalIndexingTime.presentableDuration())
-                  td(providerStats.contentLoadingTime.presentableDuration())
+                  td(providerStats.totalIndexingVisibleTime.presentableDuration())
+                  td(providerStats.contentLoadingVisibleTime.presentableDuration())
                   td(providerStats.totalNumberOfIndexedFiles.toString())
                   td(providerStats.totalNumberOfFilesFullyIndexedByExtensions.toString())
                   td(providerStats.numberOfTooLargeForIndexingFiles.toString())

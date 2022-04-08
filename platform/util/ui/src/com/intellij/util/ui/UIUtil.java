@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.ui;
 
 import com.intellij.BundleBase;
@@ -31,9 +31,7 @@ import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
 import javax.swing.FocusManager;
-import javax.swing.Timer;
 import javax.swing.*;
-import javax.swing.border.AbstractBorder;
 import javax.swing.border.Border;
 import javax.swing.border.LineBorder;
 import javax.swing.event.DocumentEvent;
@@ -57,7 +55,6 @@ import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
-import java.awt.image.BufferedImageOp;
 import java.awt.image.ImageObserver;
 import java.awt.image.RGBImageFilter;
 import java.awt.print.PrinterGraphics;
@@ -77,13 +74,13 @@ import java.util.regex.Pattern;
 @SuppressWarnings("StaticMethodOnlyUsedInOneClass")
 public final class UIUtil {
   static {
-    LoadingState.LAF_INITIALIZED.checkOccurred();
+    LoadingState.BASE_LAF_INITIALIZED.checkOccurred();
   }
 
   public static final @NlsSafe String BORDER_LINE = "<hr size=1 noshade>";
-  @NlsSafe public static final String BR = "<br/>";
-  @NlsSafe public static final String HR = "<hr/>";
-  @NlsSafe public static final String LINE_SEPARATOR = "\n";
+  public static final @NlsSafe String BR = "<br/>";
+  public static final @NlsSafe String HR = "<hr/>";
+  public static final @NlsSafe String LINE_SEPARATOR = "\n";
 
   public static final Key<Boolean> LAF_WITH_THEME_KEY = Key.create("Laf.with.ui.theme");
   public static final Key<String> PLUGGABLE_LAF_KEY = Key.create("Pluggable.laf.name");
@@ -97,9 +94,6 @@ public final class UIUtil {
   @ApiStatus.Internal
   public static final String NO_BORDER_UNDER_WINDOW_TITLE_KEY = "";
 
-  //TODO: lazy
-  static final StyleSheet NO_GAPS_BETWEEN_PARAGRAPHS_STYLE = StyleSheetUtil.createStyleSheet("p { margin-top: 0; }");
-
   // cannot be static because logging maybe not configured yet
   private static @NotNull Logger getLogger() {
     return Logger.getInstance(UIUtil.class);
@@ -109,129 +103,16 @@ public final class UIUtil {
     if (pane != null && SystemInfo.isMacOSMojave) {
       if (Runtime.version().feature() < 17) {
         pane.putClientProperty("jetbrains.awt.windowDarkAppearance", isUnderDarcula());
-      } else {
+      }
+      else {
         if (isUnderDarcula()) {
           pane.putClientProperty("apple.awt.windowAppearance", "NSAppearanceNameVibrantDark");
-        } else {
+        }
+        else {
           pane.putClientProperty("apple.awt.windowAppearance", "NSAppearanceNameVibrantLight");
         }
       }
     }
-  }
-
-  public static void setCustomTitleBar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose) {
-    if (SystemInfoRt.isMac && (Registry.is("ide.experimental.ui", false) || Registry.is("ide.experimental.ui.main.toolbar", false))) {
-      setCustomTitleForToolbar(window, rootPane, onDispose);
-      return;
-    }
-
-    if (SystemInfoRt.isMac && Registry.is("ide.mac.transparentTitleBarAppearance", false)) {
-      setTransparentTitleBar(window, rootPane, onDispose);
-      return;
-    }
-  }
-
-  public static void setTransparentTitleBar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose) {
-    if (!SystemInfoRt.isMac || !Registry.is("ide.mac.transparentTitleBarAppearance", false)) {
-      return;
-    }
-
-    JBInsets topWindowInset =  JBUI.insetsTop(getTransparentTitleBarHeight(rootPane));
-    AbstractBorder customBorder = new AbstractBorder() {
-      @Override
-      public Insets getBorderInsets(Component c) {
-        return topWindowInset;
-      }
-
-      @Override
-      public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
-        Graphics2D graphics = (Graphics2D)g.create();
-        try {
-          Rectangle headerRectangle = new Rectangle(0, 0, c.getWidth(), topWindowInset.top);
-          graphics.setColor(getPanelBackground());
-          graphics.fill(headerRectangle);
-          if (SystemInfo.isMac && Registry.is("ide.mac.transparentTitleBarAppearance")) {
-            if (window instanceof RootPaneContainer) {
-              JRootPane pane = ((RootPaneContainer)window).getRootPane();
-              if (pane == null || pane.getClientProperty(NO_BORDER_UNDER_WINDOW_TITLE_KEY) != Boolean.TRUE) {
-                graphics.setColor(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground());
-                LinePainter2D.paint(graphics, 0, topWindowInset.top - 1, c.getWidth(), topWindowInset.top - 1, LinePainter2D.StrokeType.INSIDE, 1);
-              }
-            }
-          }
-          Color color = window.isActive()
-                        ? JBColor.black
-                        : JBColor.gray;
-          graphics.setColor(color);
-        }
-        finally {
-          graphics.dispose();
-        }
-      }
-    };
-    doSetCustomTitleBar(window, rootPane, onDispose, customBorder);
-  }
-
-  public static void setCustomTitleForToolbar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose) {
-    if (!SystemInfoRt.isMac || (!Registry.is("ide.experimental.ui", false)
-                                && !Registry.is("ide.experimental.ui.main.toolbar", false))) {
-      return;
-    }
-    JBInsets topWindowInset =  JBUI.insetsTop(getTransparentTitleBarHeight(rootPane));
-    AbstractBorder customBorder = new AbstractBorder() {
-      @Override
-      public Insets getBorderInsets(Component c) {
-        return topWindowInset;
-      }
-
-      @Override
-      public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
-        Graphics2D graphics = (Graphics2D)g.create();
-        try {
-          Rectangle headerRectangle = new Rectangle(0, 0, c.getWidth(), topWindowInset.top);
-          Color color = UIManager.getColor("MainToolbar.background");
-          graphics.setColor(color != null ? color : getPanelBackground());
-          graphics.fill(headerRectangle);
-        }
-        finally {
-          graphics.dispose();
-        }
-      }
-    };
-    rootPane.putClientProperty("apple.awt.windowTitleVisible", false);
-    doSetCustomTitleBar(window, rootPane, onDispose, customBorder);
-  }
-
-  private static void doSetCustomTitleBar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose,
-                                          @NotNull Border customBorder) {
-
-    rootPane.putClientProperty("apple.awt.fullWindowContent", true);
-    rootPane.putClientProperty("apple.awt.transparentTitleBar", true);
-
-    // Use standard properties starting jdk 17
-    //if (Runtime.version().feature() >= 17) {
-      //rootPane.putClientProperty("apple.awt.windowTitleVisible", false);
-    //}
-
-    rootPane.setBorder(customBorder);
-
-    WindowAdapter windowAdapter = new WindowAdapter() {
-      @Override
-      public void windowActivated(WindowEvent e) {
-        rootPane.repaint();
-      }
-
-      @Override
-      public void windowDeactivated(WindowEvent e) {
-        rootPane.repaint();
-      }
-    };
-    PropertyChangeListener propertyChangeListener = e -> rootPane.repaint();
-    window.addPropertyChangeListener("title", propertyChangeListener);
-    onDispose.accept((Runnable)() -> {
-      window.removeWindowListener(windowAdapter);
-      window.removePropertyChangeListener("title", propertyChangeListener);
-    });
   }
 
   public static int getTransparentTitleBarHeight(JRootPane rootPane) {
@@ -242,22 +123,10 @@ public final class UIUtil {
 
     if ("small".equals(rootPane.getClientProperty("Window.style"))) {
       return JBUI.getInt("macOSWindow.Title.heightSmall", 19);
-    } else {
+    }
+    else {
       return JBUI.getInt("macOSWindow.Title.height", SystemInfo.isMacOSBigSur ? 29 : 23);
     }
-  }
-
-  private static String getWindowTitle(Window window) {
-    return window instanceof JDialog ? ((JDialog)window).getTitle() : ((JFrame)window).getTitle() ;
-  }
-
-  // Here we setup window to be checked in IdeEventQueue and reset typeahead state when the window finally appears and gets focus
-  public static void markAsTypeAheadAware(Window window) {
-    ClientProperty.put(window, "TypeAheadAwareWindow", Boolean.TRUE);
-  }
-
-  public static boolean isTypeAheadAware(Window window) {
-    return ClientProperty.isTrue(window, "TypeAheadAwareWindow");
   }
 
   // Here we setup dialog to be suggested in OwnerOptional as owner even if the dialog is not modal
@@ -457,22 +326,22 @@ public final class UIUtil {
   public enum FontColor {NORMAL, BRIGHTER}
 
   public static final char MNEMONIC = BundleBase.MNEMONIC;
-  @NlsSafe public static final String HTML_MIME = "text/html";
-  @NonNls public static final String JSLIDER_ISFILLED = "JSlider.isFilled";
-  @NonNls public static final String TABLE_FOCUS_CELL_BACKGROUND_PROPERTY = "Table.focusCellBackground";
+  public static final @NlsSafe String HTML_MIME = "text/html";
+  public static final @NonNls String JSLIDER_ISFILLED = "JSlider.isFilled";
+  public static final @NonNls String TABLE_FOCUS_CELL_BACKGROUND_PROPERTY = "Table.focusCellBackground";
   /**
    * Prevent component DataContext from returning parent editor
    * Useful for components that are manually painted over the editor to prevent shortcuts from falling-through to editor
    *
    * Usage: {@code component.putClientProperty(HIDE_EDITOR_FROM_DATA_CONTEXT_PROPERTY, Boolean.TRUE)}
    */
-  @NonNls public static final String HIDE_EDITOR_FROM_DATA_CONTEXT_PROPERTY = "AuxEditorComponent";
-  @NonNls public static final String CENTER_TOOLTIP_DEFAULT = "ToCenterTooltip";
-  @NonNls public static final String CENTER_TOOLTIP_STRICT = "ToCenterTooltip.default";
+  public static final @NonNls String HIDE_EDITOR_FROM_DATA_CONTEXT_PROPERTY = "AuxEditorComponent";
+  public static final @NonNls String CENTER_TOOLTIP_DEFAULT = "ToCenterTooltip";
+  public static final @NonNls String CENTER_TOOLTIP_STRICT = "ToCenterTooltip.default";
 
   private static final Pattern CLOSE_TAG_PATTERN = Pattern.compile("<\\s*([^<>/ ]+)([^<>]*)/\\s*>", Pattern.CASE_INSENSITIVE);
 
-  @NonNls private static final String FOCUS_PROXY_KEY = "isFocusProxy";
+  private static final @NonNls String FOCUS_PROXY_KEY = "isFocusProxy";
 
   public static final Key<Integer> KEEP_BORDER_SIDES = Key.create("keepBorderSides");
   private static final Key<UndoManager> UNDO_MANAGER = Key.create("undoManager");
@@ -524,7 +393,7 @@ public final class UIUtil {
 
   public static final Insets PANEL_SMALL_INSETS = JBInsets.create(5, 8);
 
-  @NonNls private static final String ROOT_PANE = "JRootPane.future";
+  private static final @NonNls String ROOT_PANE = "JRootPane.future";
 
   private static final Ref<Boolean> ourRetina = Ref.create(SystemInfoRt.isMac ? null : false);
 
@@ -577,7 +446,6 @@ public final class UIUtil {
    * @deprecated use {@link ClientProperty#isTrue(Component, Object)} instead
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static boolean isWindowClientPropertyTrue(Window window, @NotNull Object key) {
     return ClientProperty.isTrue(window, key);
   }
@@ -586,7 +454,6 @@ public final class UIUtil {
    * @deprecated use {@link ClientProperty#get(Component, Object)} instead
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static Object getWindowClientProperty(Window window, @NotNull Object key) {
     return ClientProperty.get(window, key);
   }
@@ -595,7 +462,6 @@ public final class UIUtil {
    * @deprecated use {@link ClientProperty#put(Window, Object, Object)}  instead
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static void putWindowClientProperty(Window window, @NotNull Object key, Object value) {
     ClientProperty.put(window, key, value);
   }
@@ -607,7 +473,6 @@ public final class UIUtil {
    * @deprecated use {@link ClientProperty#isTrue(Component, Object)} instead
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static boolean isClientPropertyTrue(Object component, @NotNull Object key) {
     return component instanceof Component && ClientProperty.isTrue((Component)component, key);
   }
@@ -619,36 +484,8 @@ public final class UIUtil {
    * @deprecated use {@link ClientProperty#get(Component, Object)} instead
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static Object getClientProperty(Object component, @NotNull @NonNls Object key) {
     return component instanceof Component ? ClientProperty.get((Component)component, key) : null;
-  }
-
-  @NotNull
-  public static Map<Object, Object> getAllClientProperties(Object component) {
-    Map<Object, Object> map = new LinkedHashMap<>();
-    if (component instanceof RootPaneContainer) component = ((RootPaneContainer)component).getRootPane();
-    if (component instanceof JComponent) {
-      try {
-        Method method = ReflectionUtil.getDeclaredMethod(JComponent.class, "getClientProperties");
-        if (method == null) return Collections.emptyMap();
-        method.setAccessible(true);
-        Object table = method.invoke(component);
-        method = ReflectionUtil.getDeclaredMethod(table.getClass(), "getKeys", Object[].class);
-        if (method == null) return Collections.emptyMap();
-        method.setAccessible(true);
-        Object arr = method.invoke(table, new Object[1]);
-        if (arr instanceof Object[]) {
-          for (Object key : (Object[])arr) {
-            map.put(key, ((JComponent)component).getClientProperty(key));
-          }
-        }
-        return Collections.unmodifiableMap(map);
-      }
-      catch (Exception ignored) {
-      }
-    }
-    return Collections.emptyMap();
   }
 
   /**
@@ -666,7 +503,6 @@ public final class UIUtil {
    * @deprecated use {@link ClientProperty#get(Component, Key)} instead
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static <T> T getClientProperty(Object component, @NotNull Key<T> key) {
     return component instanceof Component ? ClientProperty.get((Component)component, key) : null;
   }
@@ -676,7 +512,6 @@ public final class UIUtil {
    * or {@link ClientProperty#put(JComponent, Key, Object)} instead
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2023.3")
   public static <T> void putClientProperty(@NotNull JComponent component, @NotNull Key<T> key, T value) {
     component.putClientProperty(key, value);
   }
@@ -822,8 +657,7 @@ public final class UIUtil {
   /**
    * @deprecated Use {@link LinePainter2D#paint(Graphics2D, double, double, double, double)} instead.
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  @Deprecated(forRemoval = true)
   public static void drawLine(@NotNull Graphics g, int x1, int y1, int x2, int y2) {
     LinePainter2D.paint((Graphics2D)g, x1, y1, x2, y2);
   }
@@ -1022,8 +856,7 @@ public final class UIUtil {
   /**
    * @deprecated use {@link #getTreeForeground()}
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  @Deprecated(forRemoval = true)
   public static @NotNull Color getTreeTextForeground() {
     return getTreeForeground();
   }
@@ -1167,8 +1000,7 @@ public final class UIUtil {
   /**
    * @deprecated use {@link JBUI.CurrentTheme.CustomFrameDecorations#separatorForeground()}
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  @Deprecated(forRemoval = true)
   public static @NotNull Color getSeparatorColor() {
     return JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground();
   }
@@ -1274,8 +1106,7 @@ public final class UIUtil {
   /**
    * @deprecated Aqua Look-n-Feel is not supported anymore
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
+  @Deprecated(forRemoval = true)
   public static boolean isUnderAquaLookAndFeel() {
     return SystemInfoRt.isMac && UIManager.getLookAndFeel().getName().contains("Mac OS X");
   }
@@ -1283,8 +1114,7 @@ public final class UIUtil {
   /**
    * @deprecated Nimbus Look-n-Feel is deprecated and not supported anymore
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
+  @Deprecated(forRemoval = true)
   public static boolean isUnderNimbusLookAndFeel() {
     return false;
   }
@@ -1299,7 +1129,7 @@ public final class UIUtil {
       UserDataHolder dh = (UserDataHolder)lookAndFeel;
 
       return Boolean.TRUE != dh.getUserData(LAF_WITH_THEME_KEY) &&
-             StringUtil.equals(dh.getUserData(PLUGGABLE_LAF_KEY), "macOS Light");
+             Objects.equals(dh.getUserData(PLUGGABLE_LAF_KEY), "macOS Light");
     }
     return false;
   }
@@ -1310,7 +1140,7 @@ public final class UIUtil {
       UserDataHolder dh = (UserDataHolder)lookAndFeel;
 
       return Boolean.TRUE != dh.getUserData(LAF_WITH_THEME_KEY) &&
-             StringUtil.equals(dh.getUserData(PLUGGABLE_LAF_KEY), "Windows 10 Light");
+             Objects.equals(dh.getUserData(PLUGGABLE_LAF_KEY), "Windows 10 Light");
     }
     return false;
   }
@@ -1323,19 +1153,22 @@ public final class UIUtil {
     return UIManager.getLookAndFeel().getName().contains("IntelliJ") || isUnderDefaultMacTheme() || isUnderWin10LookAndFeel();
   }
 
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
+  @Deprecated(forRemoval = true)
   public static boolean isUnderGTKLookAndFeel() {
     return SystemInfoRt.isXWindow && UIManager.getLookAndFeel().getName().contains("GTK");
   }
 
   public static boolean isGraphite() {
-    if (!SystemInfoRt.isMac) return false;
+    if (!SystemInfoRt.isMac) {
+      return false;
+    }
+
     try {
       // https://developer.apple.com/library/mac/documentation/Cocoa/Reference/ApplicationKit/Classes/NSCell_Class/index.html#//apple_ref/doc/c_ref/NSGraphiteControlTint
       // NSGraphiteControlTint = 6
       return Foundation.invoke("NSColor", "currentControlTint").intValue() == 6;
-    } catch (Exception e) {
+    }
+    catch (Exception e) {
       return false;
     }
   }
@@ -1545,13 +1378,11 @@ public final class UIUtil {
     drawSearchMatch(g, startX, endX, height, getSearchMatchGradientStartColor(), getSearchMatchGradientEndColor());
   }
 
-  @NotNull
-  public static JBColor getSearchMatchGradientStartColor() {
+  public static @NotNull JBColor getSearchMatchGradientStartColor() {
     return JBColor.namedColor("SearchMatch.startBackground", JBColor.namedColor("SearchMatch.startColor", new Color(0xb3ffeaa2, true)));
   }
 
-  @NotNull
-  public static JBColor getSearchMatchGradientEndColor() {
+  public static @NotNull JBColor getSearchMatchGradientEndColor() {
     return JBColor.namedColor("SearchMatch.endBackground", JBColor.namedColor("SearchMatch.endColor", new Color(0xb3ffd042, true)));
   }
 
@@ -1700,7 +1531,7 @@ public final class UIUtil {
     painter.paint(g, startX, endX, lineY);
   }
 
-  @Deprecated
+  @Deprecated(forRemoval = true)
   public static void applyRenderingHints(@NotNull Graphics g) {
     GraphicsUtil.applyRenderingHints((Graphics2D)g);
   }
@@ -1944,8 +1775,7 @@ public final class UIUtil {
   /**
    * @deprecated use {@link ComponentUtil#findParentByCondition(Component, java.util.function.Predicate)}
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  @Deprecated(forRemoval = true)
   public static Component findParentByCondition(@Nullable Component c, @NotNull Condition<? super Component> condition) {
     return ComponentUtil.findParentByCondition(c, it -> condition.value(it));
   }
@@ -2105,11 +1935,11 @@ public final class UIUtil {
   }
 
   /**
-   * @deprecated use {@link StyleSheetUtil#loadStyleSheet}
+   * @deprecated use {@link StyleSheetUtil#loadStyleSheet(InputStream)}
    */
   @Deprecated
   public static @Nullable StyleSheet loadStyleSheet(@Nullable URL url) {
-    return StyleSheetUtil.loadStyleSheet(url);
+    return url == null ? null : StyleSheetUtil.INSTANCE.loadStyleSheet(url);
   }
 
   /**
@@ -2173,6 +2003,10 @@ public final class UIUtil {
     return StartupUiUtil.getFontWithFallback(familyName, style, size);
   }
 
+  public static @NotNull FontUIResource getFontWithFallback(@Nullable String familyName, @JdkConstants.FontStyle int style, float size) {
+    return StartupUiUtil.getFontWithFallback(familyName, style, size);
+  }
+
   //Escape error-prone HTML data (if any) when we use it in renderers, see IDEA-170768
   public static <T> T htmlInjectionGuard(T toRender) {
     if (toRender instanceof String && StringUtil.toLowerCase((String)toRender).startsWith("<html>")) {
@@ -2213,7 +2047,7 @@ public final class UIUtil {
   }
 
   public static @NotNull @NlsSafe String toHtml(@NotNull @Nls String html, final int hPadding) {
-    @NlsSafe final String withClosedTag = CLOSE_TAG_PATTERN.matcher(html).replaceAll("<$1$2></$1>");
+    final @NlsSafe String withClosedTag = CLOSE_TAG_PATTERN.matcher(html).replaceAll("<$1$2></$1>");
     Font font = StartupUiUtil.getLabelFont();
     @NonNls String family = font != null ? font.getFamily() : "Tahoma";
     int size = font != null ? font.getSize() : JBUIScale.scale(11);
@@ -2654,15 +2488,6 @@ public final class UIUtil {
     return c instanceof JFrame || c instanceof JDialog || c instanceof JWindow || c instanceof JRootPane || isFocusProxy(c);
   }
 
-  /**
-   * @deprecated Use {@link TimerUtil#createNamedTimer(String, int, ActionListener)}
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
-  public static @NotNull Timer createNamedTimer(@NonNls @NotNull String name, int delay, @NotNull ActionListener listener) {
-    return TimerUtil.createNamedTimer(name, delay, listener);
-  }
-
   public static boolean isDialogRootPane(JRootPane rootPane) {
     if (rootPane != null) {
       final Object isDialog = rootPane.getClientProperty("DIALOG_ROOT_PANE");
@@ -2997,18 +2822,15 @@ public final class UIUtil {
     }, "play sound").start();
   }
 
-  @NlsSafe
-  public static @NotNull String leftArrow() {
+  public static @NlsSafe @NotNull String leftArrow() {
     return FontUtil.leftArrow(StartupUiUtil.getLabelFont());
   }
 
-  @NlsSafe
-  public static @NotNull String rightArrow() {
+  public static @NlsSafe @NotNull String rightArrow() {
     return FontUtil.rightArrow(StartupUiUtil.getLabelFont());
   }
 
-  @NlsSafe
-  public static @NotNull String upArrow(@NotNull String defaultValue) {
+  public static @NlsSafe @NotNull String upArrow(@NotNull String defaultValue) {
     return FontUtil.upArrow(StartupUiUtil.getLabelFont(), defaultValue);
   }
 
@@ -3260,8 +3082,7 @@ public final class UIUtil {
   /**
    * @deprecated use {@link #getListSelectionBackground(boolean)}
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  @Deprecated(forRemoval = true)
   public static @NotNull Color getListUnfocusedSelectionBackground() {
     return getListSelectionBackground(false);
   }
@@ -3292,8 +3113,7 @@ public final class UIUtil {
   /**
    * @deprecated use {@link #getListForeground(boolean, boolean)}
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  @Deprecated(forRemoval = true)
   public static @NotNull Color getListForeground(boolean selected) {
     return getListForeground(selected, true);
   }
@@ -3446,8 +3266,7 @@ public final class UIUtil {
   /**
    * @deprecated use {@link #getTableForeground(boolean, boolean)}
    */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  @Deprecated(forRemoval = true)
   public static @NotNull Color getTableForeground(boolean selected) {
     return getTableForeground(selected, true);
   }
@@ -3616,7 +3435,7 @@ public final class UIUtil {
   }
 
   public static void drawImage(@NotNull Graphics g, @NotNull Image image, int x, int y, @Nullable ImageObserver observer) {
-    StartupUiUtil.drawImage(g, image, x, y, null);
+    StartupUiUtil.drawImage(g, image, x, y, observer);
   }
 
   public static @NotNull Point getCenterPoint(@NotNull Dimension container, @NotNull Dimension child) {
@@ -3633,10 +3452,6 @@ public final class UIUtil {
                                @Nullable Rectangle srcBounds,
                                @Nullable ImageObserver observer) {
     StartupUiUtil.drawImage(g, image, dstBounds, srcBounds, null, observer);
-  }
-
-  public static void drawImage(@NotNull Graphics g, @NotNull BufferedImage image, @Nullable BufferedImageOp op, int x, int y) {
-    StartupUiUtil.drawImage(g, image, x, y, -1, -1, op, null);
   }
 
   /**

@@ -1,5 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.maddyhome.idea.copyright.psi;
 
 import com.intellij.copyright.CopyrightBundle;
@@ -12,6 +11,7 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
@@ -252,6 +252,9 @@ public abstract class UpdatePsiFileCopyright extends AbstractUpdateCopyright {
     }
     catch (PatternSyntaxException ignore) {
     }
+    catch (ProcessCanceledException e) {
+      throw e;
+    }
     catch (Exception e) {
       LOG.error(e);
     }
@@ -410,7 +413,7 @@ public abstract class UpdatePsiFileCopyright extends AbstractUpdateCopyright {
     }
   }
 
-  protected static class CommentAction implements Comparable<CommentAction> {
+  protected static final class CommentAction implements Comparable<CommentAction> {
     public static final int ACTION_INSERT = 1;
     public static final int ACTION_REPLACE = 2;
     public static final int ACTION_DELETE = 3;

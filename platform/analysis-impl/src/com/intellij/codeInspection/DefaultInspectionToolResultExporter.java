@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection;
 
 import com.intellij.codeHighlighting.HighlightDisplayLevel;
@@ -28,13 +28,11 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.SmartPsiElementPointer;
-import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.ArrayFactory;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.ThreeState;
 import com.intellij.util.containers.ContainerUtil;
 import org.jdom.Element;
-import org.jdom.Verifier;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -50,6 +48,8 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static com.intellij.codeInspection.ProblemDescriptorUtil.sanitizeIllegalXmlChars;
+
 public class DefaultInspectionToolResultExporter implements InspectionToolResultExporter {
   protected static final Logger LOG = Logger.getInstance(DefaultInspectionToolResultExporter.class);
 
@@ -58,9 +58,9 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
   public static final @NonNls String INSPECTION_RESULTS_ATTRIBUTE_KEY_ATTRIBUTE = "attribute_key";
   public static final @NonNls String INSPECTION_RESULTS_ID_ATTRIBUTE = "id";
   public static final @NonNls String INSPECTION_RESULTS_DESCRIPTION_ELEMENT = "description";
-  public static final @NonNls String INSPECTION_RESULTS_HINTS_ELEMENT = "hints";
-  public static final @NonNls String INSPECTION_RESULTS_HINT_ELEMENT = "hint";
-  public static final @NonNls String INSPECTION_RESULTS_VALUE_ATTRIBUTE = "value";
+  protected static final @NonNls String INSPECTION_RESULTS_HINTS_ELEMENT = "hints";
+  protected static final @NonNls String INSPECTION_RESULTS_HINT_ELEMENT = "hint";
+  protected static final @NonNls String INSPECTION_RESULTS_VALUE_ATTRIBUTE = "value";
   public static final @NonNls String INSPECTION_RESULTS_LANGUAGE = "language";
   protected final @NotNull InspectionToolWrapper<?,?> myToolWrapper;
   protected final @NotNull GlobalInspectionContextEx myContext;
@@ -69,7 +69,7 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
 
   protected final SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor> myProblemElements = createBidiMap();
   protected final SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor> mySuppressedElements = createBidiMap();
-  protected final SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor> myResolvedElements = createBidiMap();
+  private final SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor> myResolvedElements = createBidiMap();
 
   private Map<String, Set<RefEntity>> myContents;
 
@@ -165,35 +165,18 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
                                @NotNull RefEntity refEntity,
                                @NotNull Consumer<? super Element> problemSink,
                                @NotNull Predicate<? super CommonProblemDescriptor> isDescriptorExcluded) {
-    CommonProblemDescriptor[] sorted;
-    if (descriptors.length == 1) {
-      sorted = descriptors;
-    }
-    else {
-      sorted = descriptors.clone();
-      Arrays.sort(sorted, (desc1, desc2)-> {
-        VirtualFile file1 = desc1 instanceof ProblemDescriptorBase ? ((ProblemDescriptorBase)desc1).getContainingFile() : null;
-        VirtualFile file2 = desc2 instanceof ProblemDescriptorBase ? ((ProblemDescriptorBase)desc2).getContainingFile() : null;
-        if (file1 != null && file1.equals(file2)) {
-          int diff = Integer.compare(((ProblemDescriptor)desc1).getLineNumber(), ((ProblemDescriptor)desc2).getLineNumber());
-          if (diff != 0) {
-            return diff;
-          }
-          diff = PsiUtilCore.compareElementsByPosition(((ProblemDescriptor)desc1).getPsiElement(), ((ProblemDescriptor)desc2).getPsiElement());
-          if (diff != 0) {
-            return diff;
-          }
-          return desc1.getDescriptionTemplate().compareTo(desc2.getDescriptionTemplate());
-        }
-        return file1 == null || file2 == null ? 0 : file1.getPath().compareTo(file2.getPath());
-      });
-    }
-    for (CommonProblemDescriptor descriptor : sorted) {
-      if (isDescriptorExcluded.test(descriptor)) continue;
-      int line = descriptor instanceof ProblemDescriptor ? ((ProblemDescriptor)descriptor).getLineNumber() : -1;
+    final List<ProblemDescriptorKey> keys = Arrays
+      .stream(descriptors)
+      .filter(desc -> !isDescriptorExcluded.test(desc))
+      .map(desc -> new ProblemDescriptorKey(desc))
+      .sorted()
+      .collect(Collectors.toList());
+
+    for (ProblemDescriptorKey key : keys) {
+      final var descriptor = key.descriptor;
       Element element = null;
       try {
-        element = refEntity.getRefManager().export(refEntity, line);
+        element = refEntity.getRefManager().export(refEntity, key.lineNumber);
       }
       catch (ProcessCanceledException e) {
         throw e;
@@ -276,12 +259,6 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
       }
       LOG.error(message, e);
     }
-  }
-
-  private static String sanitizeIllegalXmlChars(String text) {
-    if (Verifier.checkCharacterData(text) == null) return text;
-    return text.codePoints().map(cp -> Verifier.isXMLCharacter(cp) ? cp : '?')
-      .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
   }
 
   protected String getSeverityDelegateName() {
@@ -458,7 +435,7 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
         myProblemElements.put(refElement, descriptors);
       }
       else {
-       addLocalInspectionProblem(refElement, descriptors);
+        addLocalInspectionProblem(refElement, descriptors);
       }
     }
     else {
@@ -466,7 +443,7 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
     }
   }
 
-  public void addLocalInspectionProblem(@NotNull RefEntity refElement, CommonProblemDescriptor @NotNull[] descriptors) {
+  private void addLocalInspectionProblem(@NotNull RefEntity refElement, CommonProblemDescriptor @NotNull [] descriptors) {
     try {
       writeOutput(descriptors, refElement);
     }
@@ -553,5 +530,40 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
   @Override
   public synchronized Map<String, Set<RefEntity>> getContent() {
     return Collections.synchronizedMap(myContents == null ? new HashMap<>(1) : myContents);
+  }
+
+  private static class ProblemDescriptorKey implements Comparable<ProblemDescriptorKey> {
+    CommonProblemDescriptor descriptor;
+    VirtualFile file;
+    int lineNumber = -1;
+    int position;
+    String descriptionTemplate;
+
+    private ProblemDescriptorKey(CommonProblemDescriptor desc) {
+      descriptor = desc;
+      if (desc instanceof ProblemDescriptor) {
+        lineNumber = ((ProblemDescriptor)desc).getLineNumber();
+      }
+      if (desc instanceof ProblemDescriptorBase) {
+        final ProblemDescriptorBase descriptorBase = (ProblemDescriptorBase)desc;
+        file = descriptorBase.getContainingFile();
+        final TextRange textRange = descriptorBase.getTextRange();
+        position = textRange != null ? textRange.getStartOffset() : 0;
+        descriptionTemplate = desc.getDescriptionTemplate();
+      }
+    }
+
+    @Override
+    public int compareTo(@NotNull ProblemDescriptorKey o) {
+      if (file == null || o.file == null) {
+        return Boolean.compare(file == null, o.file == null);
+      }
+
+      int comparison = file.getPath().compareTo(o.file.getPath());
+      if (comparison == 0) comparison = Integer.compare(lineNumber, o.lineNumber);
+      if (comparison == 0) comparison = Integer.compare(position, o.position);
+      if (comparison == 0) comparison = descriptionTemplate.compareTo(o.descriptionTemplate);
+      return comparison;
+    }
   }
 }

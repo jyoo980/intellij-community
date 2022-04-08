@@ -43,8 +43,11 @@ class IdeaCommunityProperties extends BaseIdeaProperties {
     mavenArtifacts.additionalModules = [
       "intellij.tools.jps.buildScriptDependencies",
       "intellij.platform.debugger.testFramework",
-      "intellij.platform.vcs.testFramework"
+      "intellij.platform.vcs.testFramework",
+      "intellij.platform.externalSystem.testFramework",
+      "intellij.maven.testFramework"
     ]
+    mavenArtifacts.squashedModules = ["intellij.platform.util.base"]
 
     versionCheckerConfig = CE_CLASS_VERSIONS
   }

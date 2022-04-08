@@ -4,7 +4,7 @@ package org.jetbrains.kotlin.idea.parameterInfo
 
 import com.intellij.codeInsight.hints.InlayInfo
 import com.intellij.psi.PsiWhiteSpace
-import org.jetbrains.kotlin.idea.caches.resolve.analyze
+import org.jetbrains.kotlin.idea.caches.resolve.safeAnalyzeNonSourceRootCode
 import org.jetbrains.kotlin.idea.codeInsight.hints.*
 import org.jetbrains.kotlin.idea.core.util.isOneLiner
 import org.jetbrains.kotlin.psi.*
@@ -42,7 +42,7 @@ fun provideLambdaReturnValueHints(expression: KtExpression): InlayInfoDetails? {
         return null
     }
 
-    val bindingContext = expression.analyze(BodyResolveMode.PARTIAL_WITH_CFA)
+    val bindingContext = expression.safeAnalyzeNonSourceRootCode(BodyResolveMode.PARTIAL_WITH_CFA)
     if (bindingContext[USED_AS_RESULT_OF_LAMBDA, expression] == true) {
         val lambdaExpression = expression.getStrictParentOfType<KtLambdaExpression>() ?: return null
         val lambdaName = lambdaExpression.getNameOfFunctionThatTakesLambda() ?: "lambda"

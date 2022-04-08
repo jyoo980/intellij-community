@@ -1,4 +1,4 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.actionSystem.impl;
 
 import com.intellij.icons.AllIcons;
@@ -6,7 +6,6 @@ import com.intellij.ide.HelpTooltip;
 import com.intellij.internal.statistic.collectors.fus.ui.persistence.ToolbarClicksCollector;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.*;
-import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.keymap.impl.IdeMouseEventDispatcher;
@@ -39,16 +38,16 @@ import java.util.Objects;
 import java.util.Set;
 
 public class ActionButton extends JComponent implements ActionButtonComponent, AnActionHolder, Accessible {
-  // Contains actions IDs which descriptions are permitted for displaying in the ActionButton tooltip
+  // Contains action IDs which descriptions are permitted for displaying in the ActionButton tooltip
   @NonNls private static final Set<String> WHITE_LIST = Set.of("ExternalSystem.ProjectRefreshAction", "LoadConfigurationAction");
 
   /**
-   * By default button representing popup action group displays 'dropdown' icon.
-   * This key allows to avoid 'dropdown' icon painting, just put it in ActionButton's presentation or template presentation of ActionGroup like this:
-   * {@code presentation.putClientProperty(ActionButton.HIDE_DROPDOWN_ICON, Boolean.TRUE)}
+   * By default, a popup action group button displays 'dropdown' icon.
+   * Use this key to avoid suppress that icon for a presentation or a template presentation like this:
+   * {@code presentation.putClientProperty(ActionButton.HIDE_DROPDOWN_ICON, true)}.
    */
-
   public static final Key<Boolean> HIDE_DROPDOWN_ICON = Key.create("HIDE_DROPDOWN_ICON");
+
   private JBDimension myMinimumButtonSize;
   private PropertyChangeListener myPresentationListener;
   private Icon myDisabledIcon;
@@ -66,6 +65,7 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
 
   private boolean myNoIconsInPopup;
   private Insets myInsets;
+  private boolean myManualUpdate;
 
   public ActionButton(@NotNull AnAction action,
                       Presentation presentation,
@@ -152,7 +152,7 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
     return new MouseEvent(this, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, 0, 0, 1, false);
   }
 
-  private void performAction(MouseEvent e) {
+  protected void performAction(MouseEvent e) {
     AnActionEvent event = AnActionEvent.createFromInputEvent(e, myPlace, myPresentation, getDataContext(), false, true);
     if (ActionUtil.lastUpdateAndCheckDumb(myAction, event, false) && isEnabled()) {
       ActionUtil.performDumbAwareWithCallbacks(myAction, event, () -> actionPerformed(event));
@@ -172,7 +172,7 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
 
   protected void actionPerformed(@NotNull AnActionEvent event) {
     HelpTooltip.hide(this);
-    if (isPopupMenuAction(event, myAction)) {
+    if (isPopupMenuAction(event)) {
       if (!wasPopupJustClosedByButtonClick) {
         showActionGroupPopup((ActionGroup)myAction, event);
       }
@@ -223,11 +223,14 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
     };
   }
 
-  private static boolean isPopupMenuAction(AnActionEvent event, AnAction action) {
-    return action instanceof ActionGroup &&
-        !(action instanceof CustomComponentAction) &&
-        ((ActionGroup) action).isPopup() &&
-        !((ActionGroup) action).canBePerformed(event.getDataContext());
+  private boolean isPopupMenuAction(@NotNull AnActionEvent event) {
+    if (!(myAction instanceof ActionGroup)) return false;
+    if (myAction instanceof CustomComponentAction) return false;
+    if (!event.getPresentation().isPopupGroup()) return false;
+    // do not call potentially slow `canBePerformed` for a button managed by a toolbar
+    if (event.getPresentation().isPerformGroup() ||
+        myManualUpdate && ((ActionGroup)myAction).canBePerformed(event.getDataContext())) return false;
+    return true;
   }
 
   @Override
@@ -238,6 +241,9 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
     if (myPresentationListener != null) {
       myPresentation.removePropertyChangeListener(myPresentationListener);
       myPresentationListener = null;
+    }
+    if (myMouseDown) {
+      ourGlobalMouseDown = false;
     }
     myRollover = false;
     myMouseDown = false;
@@ -261,8 +267,13 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
   }
 
   public void update() {
+    myManualUpdate = true;
+    // the following code mirrors the ActionUpdater#updateActionReal code
+    boolean wasPopup = myAction instanceof ActionGroup && ((ActionGroup)myAction).isPopup();
+    myPresentation.setPopupGroup(myAction instanceof ActionGroup && (myPresentation.isPopupGroup() || wasPopup));
     AnActionEvent e = AnActionEvent.createFromInputEvent(null, myPlace, myPresentation, getDataContext(), false, true);
-    ActionUtil.performDumbAwareUpdate(LaterInvocator.isInModalContext(), myAction, e, false);
+    ActionUtil.performDumbAwareUpdate(myAction, e, false);
+    ActionUpdater.assertActionGroupPopupStateIsNotChanged(myAction, myPlace, wasPopup, myPresentation);
     updateToolTipText();
     updateIcon();
   }
@@ -304,7 +315,7 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
   }
 
   public void setIconInsets(@Nullable Insets insets) {
-    myInsets = insets != null ? JBUI.insets(insets) : JBUI.emptyInsets();
+    myInsets = insets != null ? JBInsets.create(insets) : JBInsets.emptyInsets();
   }
 
   @Override
@@ -323,7 +334,7 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
     boolean enabled = isEnabled();
     int popState = getPopState();
     Icon hoveredIcon = (popState == POPPED || popState == PUSHED) ? myPresentation.getHoveredIcon() : null;
-    Icon icon = enabled ? hoveredIcon != null ? hoveredIcon : myIcon : myDisabledIcon;
+    Icon icon = enabled ? (hoveredIcon == null ? myIcon : hoveredIcon) : myDisabledIcon;
     return icon == null ? getFallbackIcon(enabled) : icon;
   }
 
@@ -395,7 +406,8 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
   }
 
   protected boolean shallPaintDownArrow() {
-    if (!(myAction instanceof ActionGroup && ((ActionGroup)myAction).isPopup())) return false;
+    if (!(myAction instanceof ActionGroup)) return false;
+    if (!myPresentation.isPopupGroup()) return false;
     if (Boolean.TRUE == myAction.getTemplatePresentation().getClientProperty(HIDE_DROPDOWN_ICON)) return false;
     if (Boolean.TRUE == myPresentation.getClientProperty(HIDE_DROPDOWN_ICON)) return false;
     return true;
@@ -447,8 +459,6 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
 
       case MouseEvent.MOUSE_RELEASED:
         if (skipPress || !isEnabled()) return;
-        myMouseDown = false;
-        ourGlobalMouseDown = false;
         onMouseReleased(e);
         if (myRollover) {
           performAction(e);
@@ -472,7 +482,13 @@ public class ActionButton extends JComponent implements ActionButtonComponent, A
     }
   }
 
+  protected void resetMouseState() {
+    myMouseDown = false;
+    ourGlobalMouseDown = false;
+  }
+
   protected void onMouseReleased(@NotNull MouseEvent e) {
+    resetMouseState();
     // Extension point
   }
 

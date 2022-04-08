@@ -1,9 +1,11 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.kotlin.idea
 
 import com.intellij.openapi.ui.Messages
 import com.intellij.util.text.nullize
+import org.jetbrains.kotlin.idea.compiler.configuration.IdeKotlinVersion
+import org.jetbrains.kotlin.idea.compiler.configuration.KotlinIdePlugin
 
 object KotlinPluginCompatibilityVerifier {
     @JvmStatic
@@ -20,6 +22,9 @@ object KotlinPluginCompatibilityVerifier {
     }
 }
 
+/**
+ * Tests - [org.jetbrains.kotlin.test.CompatibilityVerifierVersionComparisonTest]
+ */
 interface KotlinPluginVersion {
     val kotlinVersion: String // 1.2.3
     val status: String?
@@ -31,35 +36,49 @@ interface KotlinPluginVersion {
             return OldKotlinPluginVersion.parse(version) ?: NewKotlinPluginVersion.parse(version)
         }
 
-        fun getCurrent(): KotlinPluginVersion? = parse(KotlinPluginUtil.getPluginVersion())
+        fun getCurrent(): KotlinPluginVersion? = parse(KotlinIdePlugin.version)
     }
 }
 
 data class NewKotlinPluginVersion(
-    override val kotlinVersion: String, // 1.2.3
-    override val status: String?, // release, eap, rc
-    val kotlinBuildNumber: String?,
+    val kotlinCompilerVersion: IdeKotlinVersion,
     override val buildNumber: String?, // 53
     override val platformVersion: PlatformVersion,
     val patchNumber: String?
 ) : KotlinPluginVersion {
-    companion object {
-        //203-1.4.20-dev-4575-IJ1234.45-1
-        private const val KID_KOTLIN_VERSION_REGEX_STRING =
-            "^(\\d{3})" +                            // IDEA_VERSION_ID, like '202'
-                    "-([\\d.]+)" +                   // COMPILER_VERSION name, like '1.4.10'
-                    "(?:-([A-Za-z]+))?" +            // (Optional) COMPILER_VERSION milestone, like 'eap/dev/release'
-                    "(?:-(\\d+))?" +                 // (Optional) COMPILER_VERSION build number, like '4242'
-                    "-([A-Z]{2})" +                  // Platform kind, like 'IJ'
-                    "(?:(\\d+)\\.)?" +               // (Optional) BRANCH_SUFFIX, like '1234'
-                    "(\\d*)" +                       // Build number, like '45'
-                    "(?:-(\\d+))?"                   // (Optional) Tooling update, like '-1'
+    override val kotlinVersion: String
+        get() = kotlinCompilerVersion.kotlinVersion.toString()
 
-        private val KID_KOTLIN_VERSION_REGEX = KID_KOTLIN_VERSION_REGEX_STRING.toRegex()
+    override val status: String?
+        get() = kotlinCompilerVersion.kind.artifactSuffix
+
+    companion object {
+        // typical version is `203-1.4.20-dev-4575-IJ1234.45-1`.
+        // But the regex covers remainder after compiler substring version: `-IJ1234.45-1`
+        private const val PLATFORM_SPECIFICATION_SUBSTRING_REGEX_STRING =
+            "-([A-Z]{2})" +                     // Platform kind, like 'IJ'
+                    "(?:(\\d+)\\.)?" +                  // (Optional) BRANCH_SUFFIX, like '1234'
+                    "(\\d*)" +                          // Build number, like '45'
+                    "(?:-(\\d+))?"                      // (Optional) Tooling update, like '-1'
+
+        private val PLATFORM_SPECIFICATION_REGEX = PLATFORM_SPECIFICATION_SUBSTRING_REGEX_STRING.toRegex()
 
         fun parse(version: String): NewKotlinPluginVersion? {
-            val matchResult = KID_KOTLIN_VERSION_REGEX.matchEntire(version) ?: return null
-            val (ideaVersionId, kotlinVersion, kotlinMilestone, kotlinBuild, ideaKind, branchSuffix, buildNumber, update) = matchResult.destructured
+            if (!version.contains("-")) return null
+            val ideaVersionId = version.substringBefore("-")
+            val remainingVersion = version.substringAfter("-")
+
+            val compilerVersionAndPlatformSpecificationIndexSplitter = remainingVersion.indices.reversed()
+                .asSequence()
+                .filter { remainingVersion[it] == '-' }
+                .firstOrNull { IdeKotlinVersion.opt(remainingVersion.substring(0, it)) != null }
+                ?: return null
+
+            val compilerVersion = IdeKotlinVersion.get(remainingVersion.substring(0, compilerVersionAndPlatformSpecificationIndexSplitter))
+            val platformSpecification = remainingVersion.substring(compilerVersionAndPlatformSpecificationIndexSplitter)
+
+            val matchResult = PLATFORM_SPECIFICATION_REGEX.matchEntire(platformSpecification) ?: return null
+            val (ideaKind, branchSuffix, buildNumber, update) = matchResult.destructured
 
             val platformVersionString = buildString {
                 append(ideaKind)
@@ -71,14 +90,7 @@ data class NewKotlinPluginVersion(
             }
             val platformVersion = PlatformVersion.parse(platformVersionString) ?: return null
 
-            return NewKotlinPluginVersion(
-                kotlinVersion,
-                kotlinMilestone.nullize(),
-                kotlinBuild.nullize(),
-                buildNumber.nullize(),
-                platformVersion,
-                update.nullize()
-            )
+            return NewKotlinPluginVersion(compilerVersion, buildNumber.nullize(), platformVersion, update.nullize())
         }
     }
 }
